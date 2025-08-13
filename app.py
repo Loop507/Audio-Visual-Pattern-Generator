@@ -42,116 +42,182 @@ class PatternGenerator:
         """Crea una colormap personalizzata con i colori generati"""
         return LinearSegmentedColormap.from_list("custom", self.colors, N=256)
     
-    def pattern_1_vertical_bars(self, frame_idx, width=400, height=300):
-        """Pattern 1: Barre verticali colorate con glitch effect"""
-        pattern = np.zeros((height, width, 3))
-        
-        # Usa le frequenze per modulare le barre
-        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
-        
-        # Numero di barre basato sulle frequenze
-        num_bars = int(20 + np.mean(freq_data) * 50)
-        bar_width = width // num_bars
-        
-        for i in range(num_bars):
-            # Intensità basata sulle frequenze
-            intensity = freq_data[i % len(freq_data)]
-            
-            # Altezza della barra modulata dalle frequenze
-            bar_height = int(height * (0.3 + intensity * 0.7))
-            start_y = (height - bar_height) // 2
-            
-            # Colore basato sulla posizione e frequenza
-            color_idx = int((i / num_bars + intensity) * len(self.colors)) % len(self.colors)
-            color = self.colors[color_idx]
-            
-            # Glitch effect
-            if random.random() < 0.1:  # 10% chance di glitch
-                start_y += random.randint(-20, 20)
-                bar_height = min(height - start_y, bar_height)
-            
-            # Disegna la barra
-            x_start = i * bar_width
-            x_end = min((i + 1) * bar_width, width)
-            y_end = min(start_y + bar_height, height)
-            
-            pattern[start_y:y_end, x_start:x_end] = color
-            
-        return pattern
-    
-    def pattern_2_horizontal_spectrum(self, frame_idx, width=400, height=300):
-        """Pattern 2: Spettro orizzontale con effetti di distorsione"""
+    def pattern_1_glitch_blocks(self, frame_idx, width=400, height=300):
+        """Pattern 1: Blocchi colorati glitch come nella prima immagine"""
         pattern = np.zeros((height, width, 3))
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
-        # Crea linee orizzontali basate sulle frequenze
-        for y in range(0, height, 2):  # Ogni 2 pixel
-            freq_idx = int((y / height) * len(freq_data))
-            intensity = freq_data[freq_idx]
-            
-            # Larghezza delle linee basata sull'intensità
-            line_width = int(width * intensity)
-            
-            # Effetto di distorsione
-            distortion = int(np.sin(frame_idx * 0.1 + y * 0.05) * 20)
-            line_width = max(0, min(width, line_width + distortion))
-            
-            if line_width > 0:
-                # Colore basato sulla frequenza e posizione
-                color_idx = int((y / height + intensity) * len(self.colors)) % len(self.colors)
+        # Crea blocchi di diverse dimensioni con effetto glitch
+        num_blocks_x = random.randint(15, 40)
+        num_blocks_y = random.randint(10, 25)
+        
+        block_width = width // num_blocks_x
+        block_height = height // num_blocks_y
+        
+        for i in range(num_blocks_x):
+            for j in range(num_blocks_y):
+                # Intensità basata sulla posizione e frequenza
+                freq_idx = (i + j) % len(freq_data)
+                intensity = freq_data[freq_idx]
+                
+                # Skip alcuni blocchi per effetto glitch
+                if intensity < 0.3 and random.random() < 0.4:
+                    continue
+                
+                # Dimensioni variabili del blocco
+                actual_width = int(block_width * (0.5 + intensity * 0.5))
+                actual_height = int(block_height * (0.5 + intensity * 0.5))
+                
+                # Posizione con offset casuale per glitch
+                x_offset = random.randint(-5, 5) if intensity > 0.7 else 0
+                y_offset = random.randint(-3, 3) if intensity > 0.6 else 0
+                
+                x_start = max(0, i * block_width + x_offset)
+                y_start = max(0, j * block_height + y_offset)
+                x_end = min(width, x_start + actual_width)
+                y_end = min(height, y_start + actual_height)
+                
+                # Colore basato su intensità e posizione
+                color_idx = int((intensity + i/num_blocks_x + j/num_blocks_y) * len(self.colors)) % len(self.colors)
                 color = self.colors[color_idx]
                 
-                # Gradiente orizzontale
-                for x in range(line_width):
-                    alpha = (x / line_width) if line_width > 0 else 0
-                    pattern[y, x] = [c * alpha for c in color]
+                # Variazione di luminosità
+                brightness = 0.4 + intensity * 0.6
+                final_color = [c * brightness for c in color]
+                
+                if x_start < x_end and y_start < y_end:
+                    pattern[y_start:y_end, x_start:x_end] = final_color
                     
         return pattern
     
-    def pattern_3_circular_waves(self, frame_idx, width=400, height=300):
-        """Pattern 3: Onde circolari con effetti radiali"""
+    def pattern_2_horizontal_stripes_glitch(self, frame_idx, width=400, height=300):
+        """Pattern 2: Strisce orizzontali con glitch digitale come nella seconda immagine"""
         pattern = np.zeros((height, width, 3))
         
-        center_x, center_y = width // 2, height // 2
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
-        # Griglia di coordinate
-        y_coords, x_coords = np.mgrid[0:height, 0:width]
+        # Strisce orizzontali sottili
+        stripe_height = random.randint(1, 4)  # Strisce molto sottili
         
-        # Distanza dal centro
-        distances = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+        y = 0
+        stripe_idx = 0
         
-        # Angoli
-        angles = np.arctan2(y_coords - center_y, x_coords - center_x)
-        
-        # Numero di onde basato sulle frequenze
-        num_waves = int(5 + np.mean(freq_data) * 10)
-        
-        for i in range(num_waves):
-            freq_idx = i % len(freq_data)
+        while y < height:
+            # Intensità per questa striscia
+            freq_idx = stripe_idx % len(freq_data)
             intensity = freq_data[freq_idx]
             
-            # Onda radiale
-            wave_radius = 50 + i * 30
-            wave = np.sin((distances - wave_radius) * 0.1 + frame_idx * 0.2) * intensity
+            # Altezza variabile della striscia
+            current_stripe_height = stripe_height
+            if intensity > 0.8:  # Glitch per alta intensità
+                current_stripe_height = random.randint(1, 8)
             
-            # Onda angolare
-            angular_wave = np.sin(angles * (i + 1) + frame_idx * 0.1) * intensity
+            # Larghezza della striscia (può non coprire tutto)
+            if intensity > 0.5:
+                stripe_width = width  # Striscia completa
+                x_start = 0
+            else:
+                stripe_width = int(width * (0.3 + intensity * 0.7))
+                x_start = random.randint(0, max(1, width - stripe_width))
             
-            # Combina le onde
-            combined_wave = wave * angular_wave
-            combined_wave = np.clip(combined_wave, 0, 1)
+            # Glitch orizzontale - spostamento casuale
+            if intensity > 0.7 and random.random() < 0.3:
+                x_offset = random.randint(-20, 20)
+                x_start = max(0, min(width - stripe_width, x_start + x_offset))
             
-            # Colore per questa onda
-            color = self.colors[i % len(self.colors)]
+            # Colore per questa striscia
+            color_idx = int((stripe_idx * 0.1 + intensity) * len(self.colors)) % len(self.colors)
+            base_color = self.colors[color_idx]
             
-            # Applica il colore dove l'onda è positiva
-            mask = combined_wave > 0.1
-            for c in range(3):
-                pattern[mask, c] = np.maximum(pattern[mask, c], 
-                                            combined_wave[mask] * color[c])
+            # Variazione di colore per effetto glitch
+            color = list(base_color)
+            if intensity > 0.6 and random.random() < 0.2:
+                # Glitch di colore
+                color[random.randint(0, 2)] = random.random()
+            
+            # Modula luminosità
+            brightness = 0.3 + intensity * 0.7
+            final_color = [c * brightness for c in color]
+            
+            # Disegna la striscia
+            y_end = min(height, y + current_stripe_height)
+            x_end = min(width, x_start + stripe_width)
+            
+            if x_start < x_end and y < y_end:
+                pattern[y:y_end, x_start:x_end] = final_color
+            
+            y += current_stripe_height
+            stripe_idx += 1
+            
+        return pattern
+    
+    def pattern_3_curved_flowing_lines(self, frame_idx, width=400, height=300):
+        """Pattern 3: Linee curve fluide come nella terza immagine"""
+        pattern = np.zeros((height, width, 3))
+        
+        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
+        
+        # Numero di linee curve basato sulle frequenze
+        num_curves = int(8 + np.mean(freq_data) * 15)
+        
+        # Crea griglia per le coordinate
+        y_coords, x_coords = np.mgrid[0:height, 0:width]
+        
+        for curve_idx in range(num_curves):
+            freq_idx = curve_idx % len(freq_data)
+            intensity = freq_data[freq_idx]
+            
+            if intensity < 0.2:  # Skip curve con bassa intensità
+                continue
+            
+            # Parametri per la curva
+            amplitude = height * 0.3 * intensity  # Ampiezza dell'onda
+            frequency = (curve_idx + 1) * 0.02  # Frequenza dell'onda
+            phase = frame_idx * 0.1 + curve_idx * 0.5  # Fase per animazione
+            
+            # Centro verticale della curva
+            center_y = height * (curve_idx / num_curves)
+            
+            # Calcola la curva sinusoidale
+            curve_y = center_y + amplitude * np.sin(x_coords * frequency + phase)
+            
+            # Spessore della linea basato sull'intensità
+            line_thickness = max(1, int(5 * intensity))
+            
+            # Colore per questa curva
+            color_idx = curve_idx % len(self.colors)
+            base_color = self.colors[color_idx]
+            
+            # Modifica colore per varietà
+            color_variation = 0.8 + intensity * 0.4
+            final_color = [c * color_variation for c in base_color]
+            
+            # Disegna la curva
+            for x in range(width):
+                curve_center = int(curve_y[0, x])
                 
+                # Disegna lo spessore della linea
+                for thickness in range(-line_thickness//2, line_thickness//2 + 1):
+                    y_pos = curve_center + thickness
+                    
+                    if 0 <= y_pos < height:
+                        # Effetto sfumato per lo spessore
+                        alpha = 1.0 - abs(thickness) / (line_thickness/2 + 1)
+                        alpha *= intensity  # Modula con intensità audio
+                        
+                        # Mescola il colore
+                        for c in range(3):
+                            pattern[y_pos, x, c] = max(pattern[y_pos, x, c], 
+                                                     final_color[c] * alpha)
+        
+        # Effetto di flow - aggiungi movimento fluido
+        if frame_idx > 0:
+            # Leggero blur orizzontale per effetto flow
+            for c in range(3):
+                pattern[:, :, c] = gaussian_filter1d(pattern[:, :, c], 
+                                                   sigma=0.5, axis=1)
+        
         return pattern
 
 def extract_audio_features(audio_file):
@@ -160,6 +226,10 @@ def extract_audio_features(audio_file):
         # Carica l'audio
         y, sr = librosa.load(audio_file, sr=22050)
         
+        if len(y) == 0:
+            st.error("Il file audio sembra essere vuoto o corrotto")
+            return None
+            
         # Calcola lo spettrogramma
         stft = librosa.stft(y, hop_length=512)
         magnitude = np.abs(stft)
@@ -169,11 +239,19 @@ def extract_audio_features(audio_file):
         for frame in range(magnitude.shape[1]):
             # Prendi le prime 50 frequenze e normalizza
             frame_data = magnitude[:50, frame]
-            frame_data = frame_data / (np.max(frame_data) + 1e-6)
+            if np.max(frame_data) > 0:
+                frame_data = frame_data / np.max(frame_data)
+            else:
+                frame_data = np.zeros_like(frame_data)
             spectral_features.append(frame_data)
         
-        # Altre features
-        tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+        # Altre features con gestione errori
+        try:
+            tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+            tempo = float(tempo) if tempo is not None else 120.0
+        except:
+            tempo = 120.0  # Valore di default
+            beats = np.array([])
         
         return {
             'spectral_features': spectral_features,
@@ -183,7 +261,7 @@ def extract_audio_features(audio_file):
             'sample_rate': sr
         }
     except Exception as e:
-        st.error(f"Errore nell'estrazione delle features audio: {e}")
+        st.error(f"Errore nell'estrazione delle features audio: {str(e)}")
         return None
 
 def create_animated_visualization(audio_features, pattern_type):
@@ -203,12 +281,12 @@ def create_animated_visualization(audio_features, pattern_type):
         ax.axis('off')
         
         # Genera il pattern basato sul tipo selezionato
-        if pattern_type == "Barre Verticali":
-            pattern = generator.pattern_1_vertical_bars(frame_idx)
-        elif pattern_type == "Spettro Orizzontale":
-            pattern = generator.pattern_2_horizontal_spectrum(frame_idx)
-        else:  # Onde Circolari
-            pattern = generator.pattern_3_circular_waves(frame_idx)
+        if pattern_type == "Blocchi Glitch":
+            pattern = generator.pattern_1_glitch_blocks(frame_idx)
+        elif pattern_type == "Strisce Orizzontali":
+            pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx)
+        else:  # Linee Curve Fluide
+            pattern = generator.pattern_3_curved_flowing_lines(frame_idx)
         
         ax.imshow(pattern, aspect='auto')
         ax.set_title(f"Frame {frame_idx + 1}/{total_frames}", color='white', fontsize=12)
@@ -224,15 +302,20 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    # Salva il file temporaneamente
-    with open("temp_audio.wav", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    
-    st.success("File audio caricato con successo!")
-    
-    # Estrai le features audio
-    with st.spinner("Analizzando l'audio..."):
-        audio_features = extract_audio_features("temp_audio.wav")
+    try:
+        # Salva il file temporaneamente
+        with open("temp_audio.wav", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        st.success("File audio caricato con successo!")
+        
+        # Estrai le features audio
+        with st.spinner("Analizzando l'audio..."):
+            audio_features = extract_audio_features("temp_audio.wav")
+            
+    except Exception as e:
+        st.error(f"Errore nel caricamento del file: {str(e)}")
+        audio_features = None
     
     if audio_features is not None:
         st.success("Analisi audio completata!")
@@ -242,14 +325,15 @@ if uploaded_file is not None:
         with col1:
             st.metric("Durata", f"{audio_features['duration']:.2f}s")
         with col2:
-            st.metric("Tempo", f"{audio_features['tempo']:.1f} BPM")
+            tempo_val = float(audio_features['tempo']) if audio_features['tempo'] is not None else 0.0
+            st.metric("Tempo", f"{tempo_val:.1f} BPM")
         with col3:
             st.metric("Sample Rate", f"{audio_features['sample_rate']} Hz")
         
         # Selezione del tipo di pattern
         pattern_type = st.selectbox(
             "Seleziona il tipo di pattern:",
-            ["Barre Verticali", "Spettro Orizzontale", "Onde Circolari"]
+            ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide"]
         )
         
         # Generazione dei pattern
@@ -267,12 +351,12 @@ if uploaded_file is not None:
                     with col:
                         frame_idx = i * len(audio_features['spectral_features']) // 3
                         
-                        if pattern_type == "Barre Verticali":
-                            pattern = generator.pattern_1_vertical_bars(frame_idx)
-                        elif pattern_type == "Spettro Orizzontale":
-                            pattern = generator.pattern_2_horizontal_spectrum(frame_idx)
+                        if pattern_type == "Blocchi Glitch":
+                            pattern = generator.pattern_1_glitch_blocks(frame_idx)
+                        elif pattern_type == "Strisce Orizzontali":
+                            pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx)
                         else:
-                            pattern = generator.pattern_3_circular_waves(frame_idx)
+                            pattern = generator.pattern_3_curved_flowing_lines(frame_idx)
                         
                         fig, ax = plt.subplots(figsize=(6, 4))
                         ax.imshow(pattern, aspect='auto')
@@ -292,12 +376,12 @@ if uploaded_file is not None:
                 )
                 
                 # Mostra il frame selezionato
-                if pattern_type == "Barre Verticali":
-                    pattern = generator.pattern_1_vertical_bars(frame_slider)
-                elif pattern_type == "Spettro Orizzontale":
-                    pattern = generator.pattern_2_horizontal_spectrum(frame_slider)
+                if pattern_type == "Blocchi Glitch":
+                    pattern = generator.pattern_1_glitch_blocks(frame_slider)
+                elif pattern_type == "Strisce Orizzontali":
+                    pattern = generator.pattern_2_horizontal_stripes_glitch(frame_slider)
                 else:
-                    pattern = generator.pattern_3_circular_waves(frame_slider)
+                    pattern = generator.pattern_3_curved_flowing_lines(frame_slider)
                 
                 fig, ax = plt.subplots(figsize=(12, 8))
                 ax.imshow(pattern, aspect='auto')
@@ -326,9 +410,9 @@ if uploaded_file is not None:
             st.markdown("""
             **Pattern Generati:**
             
-            1. **Barre Verticali**: Le barre cambiano altezza e colore basandosi sulle frequenze audio
-            2. **Spettro Orizzontale**: Linee orizzontali che rappresentano lo spettro delle frequenze
-            3. **Onde Circolari**: Pattern radiali che si espandono seguendo il ritmo
+            1. **Blocchi Glitch**: Blocchi colorati di diverse dimensioni con effetti di glitch digitale
+            2. **Strisce Orizzontali**: Linee orizzontali sottili con distorsioni e spostamenti
+            3. **Linee Curve Fluide**: Curve sinusoidali che scorrono fluidamente seguendo l'audio
             
             **Caratteristiche:**
             - Colori casuali generati ad ogni esecuzione
