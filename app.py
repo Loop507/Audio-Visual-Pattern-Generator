@@ -10,6 +10,11 @@ import time
 from scipy import signal
 from scipy.ndimage import gaussian_filter1d
 import colorsys
+import imageio
+import cv2
+from PIL import Image
+import os
+import tempfile
 
 # Configurazione pagina
 st.set_page_config(
@@ -418,6 +423,85 @@ if uploaded_file is not None:
                 st.pyplot(fig)
                 plt.close()
                 
+                # SEZIONE GENERAZIONE VIDEO/GIF
+                st.subheader("🎬 Genera Video/GIF Animato")
+                
+                col_video1, col_video2 = st.columns(2)
+                
+                with col_video1:
+                    st.markdown("**🎥 Video MP4**")
+                    video_duration = st.slider(
+                        "Durata video (secondi)", 
+                        min_value=5, 
+                        max_value=30, 
+                        value=15
+                    )
+                    video_fps = st.selectbox(
+                        "FPS Video", 
+                        [24, 30, 60], 
+                        index=1
+                    )
+                    
+                    if st.button("🎬 Genera Video MP4", key="video_btn"):
+                        with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
+                            video_path = create_video_from_patterns(
+                                audio_features, 
+                                pattern_type, 
+                                fps=video_fps, 
+                                duration_seconds=video_duration
+                            )
+                            
+                        if video_path and os.path.exists(video_path):
+                            with open(video_path, 'rb') as video_file:
+                                video_bytes = video_file.read()
+                            
+                            st.success("Video generato con successo!")
+                            st.video(video_bytes)
+                            
+                            st.download_button(
+                                label="📥 Scarica Video MP4",
+                                data=video_bytes,
+                                file_name=f"pattern_{pattern_type}_{int(time.time())}.mp4",
+                                mime="video/mp4"
+                            )
+                
+                with col_video2:
+                    st.markdown("**🎞️ GIF Animata**")
+                    gif_duration = st.slider(
+                        "Durata GIF (secondi)", 
+                        min_value=3, 
+                        max_value=15, 
+                        value=8
+                    )
+                    gif_fps = st.selectbox(
+                        "FPS GIF", 
+                        [10, 15, 20], 
+                        index=1
+                    )
+                    
+                    if st.button("🎞️ Genera GIF", key="gif_btn"):
+                        with st.spinner("Generando GIF..."):
+                            gif_path = create_gif_from_patterns(
+                                audio_features, 
+                                pattern_type, 
+                                fps=gif_fps, 
+                                duration_seconds=gif_duration
+                            )
+                            
+                        if gif_path and os.path.exists(gif_path):
+                            with open(gif_path, 'rb') as gif_file:
+                                gif_bytes = gif_file.read()
+                            
+                            st.success("GIF generata con successo!")
+                            st.image(gif_bytes)
+                            
+                            st.download_button(
+                                label="📥 Scarica GIF",
+                                data=gif_bytes,
+                                file_name=f"pattern_{pattern_type}_{int(time.time())}.gif",
+                                mime="image/gif"
+                            )
+                
                 # Informazioni sui colori
                 st.subheader("Palette Colori Generata")
                 color_cols = st.columns(len(generator.colors))
@@ -446,6 +530,7 @@ if uploaded_file is not None:
             - Sincronizzazione con le frequenze audio
             - Effetti di glitch e distorsione
             - Pattern mai identici tra esecuzioni diverse
+            - **Esportazione in Video MP4 e GIF**
             """)
 
 # Sidebar con informazioni
@@ -460,6 +545,7 @@ with st.sidebar:
     - Colori sempre casuali
     - Sincronizzazione tempo-reale
     - Effetti visuali dinamici
+    - **Esportazione Video/GIF**
     """)
     
     st.markdown("### 🚀 Deploy su Streamlit")
