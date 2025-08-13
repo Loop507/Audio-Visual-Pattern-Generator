@@ -223,45 +223,72 @@ class PatternGenerator:
 def extract_audio_features(audio_file):
     """Estrae le caratteristiche audio per la visualizzazione"""
     try:
-        # Carica l'audio
-        y, sr = librosa.load(audio_file, sr=22050)
+        # Carica l'audio con parametri più compatibili
+        y, sr = librosa.load(audio_file, sr=22050, mono=True)
         
         if len(y) == 0:
             st.error("Il file audio sembra essere vuoto o corrotto")
             return None
             
-        # Calcola lo spettrogramma
-        stft = librosa.stft(y, hop_length=512)
+        # Calcola lo spettrogramma con parametri fissi
+        n_fft = 2048
+        hop_length = 512
+        stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
         magnitude = np.abs(stft)
+        
+        # Limita il numero di features per performance
+        n_freq_bins = min(50, magnitude.shape[0])
         
         # Features spettrali nel tempo
         spectral_features = []
-        for frame in range(magnitude.shape[1]):
-            # Prendi le prime 50 frequenze e normalizza
-            frame_data = magnitude[:50, frame]
+        step = max(1, magnitude.shape[1] // 1000)  # Massimo 1000 frame
+        
+        for frame in range(0, magnitude.shape[1], step):
+            # Prendi le prime n_freq_bins frequenze e normalizza
+            frame_data = magnitude[:n_freq_bins, frame]
             if np.max(frame_data) > 0:
                 frame_data = frame_data / np.max(frame_data)
             else:
-                frame_data = np.zeros_like(frame_data)
+                frame_data = np.zeros(n_freq_bins)
             spectral_features.append(frame_data)
         
-        # Altre features con gestione errori
+        # Beat tracking più semplice
         try:
-            tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
-            tempo = float(tempo) if tempo is not None else 120.0
-        except:
-            tempo = 120.0  # Valore di default
+            # Usa onset detection più semplice se beat tracking fallisce
+            tempo = None
+            beats = None
+            
+            # Prova prima con onset detection
+            onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
+            if len(onset_frames) > 1:
+                # Stima il tempo dagli onset
+                onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+                intervals = np.diff(onset_times)
+                if len(intervals) > 0:
+                    avg_interval = np.median(intervals)
+                    tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
+                else:
+                    tempo = 120.0
+            else:
+                tempo = 120.0
+                
+            beats = onset_frames
+            
+        except Exception as beat_error:
+            st.warning(f"Impossibile estrarre il beat: {beat_error}")
+            tempo = 120.0
             beats = np.array([])
         
         return {
             'spectral_features': spectral_features,
-            'tempo': tempo,
+            'tempo': float(tempo),
             'beats': beats,
             'duration': len(y) / sr,
             'sample_rate': sr
         }
     except Exception as e:
         st.error(f"Errore nell'estrazione delle features audio: {str(e)}")
+        st.info("Suggerimento: prova con un file WAV o MP3 più piccolo")
         return None
 
 def create_animated_visualization(audio_features, pattern_type):
