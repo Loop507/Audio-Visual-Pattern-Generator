@@ -11,10 +11,17 @@ from scipy import signal
 from scipy.ndimage import gaussian_filter1d
 import colorsys
 import imageio
-import cv2
 from PIL import Image
 import os
 import tempfile
+
+# Prova a importare OpenCV, se fallisce usa solo imageio
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    st.warning("OpenCV non disponibile, usando solo imageio per i video")
 
 # Configurazione pagina
 st.set_page_config(
@@ -444,26 +451,47 @@ if uploaded_file is not None:
                     
                     if st.button("🎬 Genera Video MP4", key="video_btn"):
                         with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
-                            video_path = create_video_from_patterns(
-                                audio_features, 
-                                pattern_type, 
-                                fps=video_fps, 
-                                duration_seconds=video_duration
-                            )
-                            
-                        if video_path and os.path.exists(video_path):
-                            with open(video_path, 'rb') as video_file:
-                                video_bytes = video_file.read()
-                            
-                            st.success("Video generato con successo!")
-                            st.video(video_bytes)
-                            
-                            st.download_button(
-                                label="📥 Scarica Video MP4",
-                                data=video_bytes,
-                                file_name=f"pattern_{pattern_type}_{int(time.time())}.mp4",
-                                mime="video/mp4"
-                            )
+                            try:
+                                video_path = create_video_from_patterns(
+                                    audio_features, 
+                                    pattern_type, 
+                                    fps=video_fps, 
+                                    duration_seconds=video_duration
+                                )
+                                
+                                if video_path and os.path.exists(video_path):
+                                    # Verifica che il file sia stato creato
+                                    file_size = os.path.getsize(video_path)
+                                    st.info(f"Video creato: {file_size} bytes")
+                                    
+                                    with open(video_path, 'rb') as video_file:
+                                        video_bytes = video_file.read()
+                                    
+                                    if len(video_bytes) > 0:
+                                        st.success("✅ Video generato con successo!")
+                                        
+                                        # Prova a mostrare il video
+                                        try:
+                                            st.video(video_bytes)
+                                        except Exception as display_error:
+                                            st.warning(f"Impossibile visualizzare il video: {display_error}")
+                                            st.info("Ma puoi scaricarlo qui sotto!")
+                                        
+                                        # Download sempre disponibile
+                                        st.download_button(
+                                            label="📥 Scarica Video MP4",
+                                            data=video_bytes,
+                                            file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
+                                            mime="video/mp4"
+                                        )
+                                    else:
+                                        st.error("Il file video è vuoto")
+                                else:
+                                    st.error("Impossibile creare il file video")
+                                    
+                            except Exception as e:
+                                st.error(f"Errore durante la generazione: {str(e)}")
+                                st.info("Prova con una durata più breve o un FPS più basso")
                 
                 with col_video2:
                     st.markdown("**🎞️ GIF Animata**")
@@ -481,26 +509,47 @@ if uploaded_file is not None:
                     
                     if st.button("🎞️ Genera GIF", key="gif_btn"):
                         with st.spinner("Generando GIF..."):
-                            gif_path = create_gif_from_patterns(
-                                audio_features, 
-                                pattern_type, 
-                                fps=gif_fps, 
-                                duration_seconds=gif_duration
-                            )
-                            
-                        if gif_path and os.path.exists(gif_path):
-                            with open(gif_path, 'rb') as gif_file:
-                                gif_bytes = gif_file.read()
-                            
-                            st.success("GIF generata con successo!")
-                            st.image(gif_bytes)
-                            
-                            st.download_button(
-                                label="📥 Scarica GIF",
-                                data=gif_bytes,
-                                file_name=f"pattern_{pattern_type}_{int(time.time())}.gif",
-                                mime="image/gif"
-                            )
+                            try:
+                                gif_path = create_gif_from_patterns(
+                                    audio_features, 
+                                    pattern_type, 
+                                    fps=gif_fps, 
+                                    duration_seconds=gif_duration
+                                )
+                                
+                                if gif_path and os.path.exists(gif_path):
+                                    # Verifica dimensione file
+                                    file_size = os.path.getsize(gif_path)
+                                    st.info(f"GIF creata: {file_size} bytes")
+                                    
+                                    with open(gif_path, 'rb') as gif_file:
+                                        gif_bytes = gif_file.read()
+                                    
+                                    if len(gif_bytes) > 0:
+                                        st.success("✅ GIF generata con successo!")
+                                        
+                                        # Mostra la GIF
+                                        try:
+                                            st.image(gif_bytes, caption="Pattern GIF Animata")
+                                        except Exception as display_error:
+                                            st.warning(f"Impossibile visualizzare la GIF: {display_error}")
+                                            st.info("Ma puoi scaricarla qui sotto!")
+                                        
+                                        # Download sempre disponibile
+                                        st.download_button(
+                                            label="📥 Scarica GIF",
+                                            data=gif_bytes,
+                                            file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.gif",
+                                            mime="image/gif"
+                                        )
+                                    else:
+                                        st.error("Il file GIF è vuoto")
+                                else:
+                                    st.error("Impossibile creare il file GIF")
+                                    
+                            except Exception as e:
+                                st.error(f"Errore durante la generazione: {str(e)}")
+                                st.info("Prova con una durata più breve")
                 
                 # Informazioni sui colori
                 st.subheader("Palette Colori Generata")
