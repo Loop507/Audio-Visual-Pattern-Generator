@@ -10,6 +10,5 @@ audioread>=3.0.0
 resampy>=0.4.0
 llvmlite>=0.40.0
 opencv-python-headless>=4.8.0
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
+imageio[ffmpeg]>=2.31.0
 Pillow>=10.0.0
