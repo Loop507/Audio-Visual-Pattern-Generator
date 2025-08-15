@@ -305,7 +305,7 @@ def extract_audio_features(audio_file):
 
 def create_video_from_patterns(audio_features, pattern_type, fps=30, max_duration=30):
     """
-    Genera un video MP4 a partire dai pattern visivi - VERSIONE CORRETTA
+    Genera un video MP4 a partire dai pattern visivi - VERSIONE ULTRA-ROBUSTA
     
     :param audio_features: Dizionario con le caratteristiche audio.
     :param pattern_type: Tipo di pattern da generare.
@@ -314,9 +314,18 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, max_duratio
     :return: Percorso del file video creato.
     """
     try:
+        # Verifica disponibilità ffmpeg
+        try:
+            import imageio.plugins.ffmpeg
+            st.info("✅ FFmpeg disponibile tramite imageio")
+        except:
+            st.warning("⚠️ FFmpeg potrebbe non essere disponibile")
+        
         # Limita la durata per evitare file troppo grandi
         video_duration = min(audio_features['duration'], max_duration)
-        num_frames = int(video_duration * fps)
+        num_frames = max(1, int(video_duration * fps))  # Almeno 1 frame
+        
+        st.info(f"📊 Generando {num_frames} frame a {fps} FPS per {video_duration:.1f} secondi")
         
         # Risoluzione fissa per evitare problemi
         width, height = 800, 600
@@ -333,53 +342,129 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, max_duratio
         
         # Genera tutti i frame
         for i in range(num_frames):
-            # Aggiorna progress
-            progress = i / num_frames
-            progress_bar.progress(progress)
-            status_text.text(f"Generando frame {i+1}/{num_frames}")
-            
-            # Calcola l'indice del frame audio da usare
-            audio_frame_idx = int(i * len(audio_features['spectral_features']) / num_frames)
-            
-            # Seleziona e genera il pattern
-            if pattern_type == "Blocchi Glitch":
-                pattern = generator.pattern_1_glitch_blocks(audio_frame_idx, width, height)
-            elif pattern_type == "Strisce Orizzontali":
-                pattern = generator.pattern_2_horizontal_stripes_glitch(audio_frame_idx, width, height)
-            else:  # Linee Curve Fluide
-                pattern = generator.pattern_3_curved_flowing_lines(audio_frame_idx, width, height)
-            
-            # Assicurati che i valori siano nel range corretto [0, 1]
-            pattern = np.clip(pattern, 0, 1)
-            
-            # Converte in uint8 per il video
-            frame_uint8 = (pattern * 255).astype(np.uint8)
-            frames.append(frame_uint8)
+            try:
+                # Aggiorna progress
+                progress = i / num_frames
+                progress_bar.progress(progress)
+                status_text.text(f"Generando frame {i+1}/{num_frames}")
+                
+                # Calcola l'indice del frame audio da usare
+                audio_frame_idx = int(i * len(audio_features['spectral_features']) / num_frames)
+                
+                # Seleziona e genera il pattern
+                if pattern_type == "Blocchi Glitch":
+                    pattern = generator.pattern_1_glitch_blocks(audio_frame_idx, width, height)
+                elif pattern_type == "Strisce Orizzontali":
+                    pattern = generator.pattern_2_horizontal_stripes_glitch(audio_frame_idx, width, height)
+                else:  # Linee Curve Fluide
+                    pattern = generator.pattern_3_curved_flowing_lines(audio_frame_idx, width, height)
+                
+                # Assicurati che i valori siano nel range corretto [0, 1]
+                pattern = np.clip(pattern, 0, 1)
+                
+                # Converte in uint8 per il video
+                frame_uint8 = (pattern * 255).astype(np.uint8)
+                
+                # Verifica dimensioni del frame
+                if frame_uint8.shape != (height, width, 3):
+                    st.error(f"❌ Dimensioni frame errate: {frame_uint8.shape}")
+                    return None
+                
+                frames.append(frame_uint8)
+                
+            except Exception as frame_error:
+                st.error(f"❌ Errore nel frame {i}: {frame_error}")
+                return None
         
         # Pulisci la progress bar
         progress_bar.empty()
-        status_text.text("Salvando il video...")
+        status_text.text("💾 Salvando il video...")
         
-        # Crea il file temporaneo
-        temp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        video_path = temp_video.name
-        temp_video.close()
+        # Crea il file temporaneo con nome più specifico
+        temp_dir = tempfile.gettempdir()
+        video_filename = f"pattern_video_{int(time.time())}.mp4"
+        video_path = os.path.join(temp_dir, video_filename)
         
-        # Scrivi il video usando imageio
-        with imageio.get_writer(video_path, fps=fps, format='mp4', codec='libx264') as writer:
-            for frame in frames:
-                writer.append_data(frame)
+        st.info(f"📁 Salvando video in: {video_path}")
         
-        status_text.text("Video completato!")
+        # Prova diversi metodi di scrittura video
+        video_written = False
         
-        # Verifica che il file sia stato creato correttamente
-        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+        # METODO 1: imageio con ffmpeg esplicito
+        if not video_written:
+            try:
+                status_text.text("🎬 Tentativo 1: imageio + ffmpeg...")
+                with imageio.get_writer(
+                    video_path, 
+                    fps=fps, 
+                    format='FFMPEG',
+                    codec='libx264',
+                    pixelformat='yuv420p',
+                    ffmpeg_log_level='error'
+                ) as writer:
+                    for frame in frames:
+                        writer.append_data(frame)
+                
+                if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                    video_written = True
+                    st.success("✅ Video creato con imageio+ffmpeg")
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Metodo 1 fallito: {e}")
+        
+        # METODO 2: imageio senza codec specifico
+        if not video_written:
+            try:
+                status_text.text("🎬 Tentativo 2: imageio base...")
+                with imageio.get_writer(video_path, fps=fps) as writer:
+                    for frame in frames:
+                        writer.append_data(frame)
+                
+                if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                    video_written = True
+                    st.success("✅ Video creato con imageio base")
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Metodo 2 fallito: {e}")
+        
+        # METODO 3: Fallback con MP4V codec
+        if not video_written:
+            try:
+                status_text.text("🎬 Tentativo 3: codec MP4V...")
+                video_path_mp4v = video_path.replace('.mp4', '_mp4v.mp4')
+                with imageio.get_writer(
+                    video_path_mp4v, 
+                    fps=fps, 
+                    format='FFMPEG',
+                    codec='mp4v'
+                ) as writer:
+                    for frame in frames:
+                        writer.append_data(frame)
+                
+                if os.path.exists(video_path_mp4v) and os.path.getsize(video_path_mp4v) > 0:
+                    video_path = video_path_mp4v
+                    video_written = True
+                    st.success("✅ Video creato con codec MP4V")
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Metodo 3 fallito: {e}")
+        
+        status_text.empty()
+        
+        # Verifica finale
+        if video_written and os.path.exists(video_path) and os.path.getsize(video_path) > 0:
             return video_path
         else:
-            raise Exception("Il file video non è stato creato correttamente")
+            raise Exception("Tutti i metodi di creazione video sono falliti")
             
     except Exception as e:
-        st.error(f"Errore nella generazione video: {str(e)}")
+        st.error(f"❌ Errore critico nella generazione video: {str(e)}")
+        
+        # Debug info
+        st.error("🔍 **Informazioni Debug:**")
+        st.error(f"- Numero frames: {len(frames) if 'frames' in locals() else 'N/A'}")
+        st.error(f"- Percorso video: {video_path if 'video_path' in locals() else 'N/A'}")
+        
         # Cleanup in caso di errore
         if 'video_path' in locals() and os.path.exists(video_path):
             try:
@@ -589,14 +674,34 @@ with st.sidebar:
     """)
     
     st.markdown("### 🔧 Requirements.txt")
-    st.code("""streamlit
-numpy
-librosa
-matplotlib
-scipy
-pillow
-imageio[ffmpeg]
-colorsys""", language="text")
+    st.code("""streamlit>=1.28.0
+numpy>=1.24.0
+librosa>=0.10.0
+matplotlib>=3.7.0
+scipy>=1.11.0
+imageio[ffmpeg]>=2.31.0
+Pillow>=10.0.0""", language="text")
+    
+    st.markdown("### 🚀 Setup FFmpeg")
+    st.markdown("""
+    **Per Streamlit Cloud:**
+    ```bash
+    # Crea file packages.txt nella root:
+    ffmpeg
+    ```
+    
+    **Localmente:**
+    ```bash
+    # Linux/Ubuntu:
+    sudo apt install ffmpeg
+    
+    # macOS:
+    brew install ffmpeg
+    
+    # Windows:
+    # Scarica da https://ffmpeg.org/
+    ```
+    """)
 
 # Footer
 st.markdown("---")
