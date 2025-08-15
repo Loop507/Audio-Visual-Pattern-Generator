@@ -232,18 +232,10 @@ class PatternGenerator:
         if random.random() < self.glitch_effect:
             glitch_shift = random.randint(-5, 5)
 
-        # Disegna il cerchio principale
-        circle_radius = int(width * (0.3 + 0.2 * intensity * self.master_intensity))
-        x_center, y_center = width // 2 + glitch_shift, height // 2 + glitch_shift
-        draw.ellipse(
-            (x_center - circle_radius, y_center - circle_radius,
-             x_center + circle_radius, y_center + circle_radius),
-            outline="white",
-            width=max(2, int(8 * self.thickness))
-        )
-
         # Disegna le linee a croce
         line_thickness = max(2, int(6 * self.thickness))
+        x_center, y_center = width // 2 + glitch_shift, height // 2 + glitch_shift
+
         draw.line(
             (x_center, 0, x_center, height), 
             fill="white", width=line_thickness
@@ -272,14 +264,6 @@ class PatternGenerator:
                 (x0, y0, x1, y1), 
                 fill=tuple(int(c * 255) for c in color_mod)
             )
-
-        # Disegna una griglia nel cerchio
-        grid_spacing = int(30 * (1 - self.thickness))
-        if grid_spacing > 0:
-            for i in range(x_center - circle_radius, x_center + circle_radius, grid_spacing):
-                draw.line((i, y_center - circle_radius, i, y_center + circle_radius), fill=(100, 100, 100))
-            for i in range(y_center - circle_radius, y_center + circle_radius, grid_spacing):
-                draw.line((x_center - circle_radius, i, x_center + circle_radius, i), fill=(100, 100, 100))
 
         # Converte l'immagine PIL in un array NumPy
         return np.array(pil_img) / 255.0
