@@ -365,7 +365,7 @@ if uploaded_file is not None:
         col_bg, col_palette = st.columns(2)
         
         with col_bg:
-            hex_bg = st.color_picker("Colore Sfondo", "#000000")
+            hex_bg = st.color_picker("Colore Sfondo", "#000000", key="bg_picker")
             bg_color_rgb = tuple(int(hex_bg[j:j+2], 16) / 255.0 for j in (1, 3, 5))
 
         with col_palette:
@@ -376,7 +376,7 @@ if uploaded_file is not None:
                 cols_color_picker = st.columns(num_colors)
                 for i in range(num_colors):
                     with cols_color_picker[i]:
-                        hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF))
+                        hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF), key=f"color_picker_{i}")
                         user_colors.append(tuple(int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)))
             else:
                 user_colors = None
@@ -386,6 +386,14 @@ if uploaded_file is not None:
         st.subheader("✍️ Aggiungi un Titolo")
         video_title = st.text_input("Inserisci il titolo del video (lascia vuoto per non aggiungerlo)", "")
         
+        if video_title:
+            title_position = st.selectbox(
+                "Posizione Titolo:",
+                ["In Alto", "In Basso", "A Sinistra", "A Destra"]
+            )
+        else:
+            title_position = None
+
         if st.button("🎬 Genera Video MP4"):
             with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
                 try:
@@ -418,8 +426,16 @@ if uploaded_file is not None:
                     # Preparazione font per il titolo
                     if video_title:
                         try:
-                            font = ImageFont.truetype("arial.ttf", 40)
-                        except IOError:
+                            # Tenta di caricare un font TrueType
+                            font_path = os.path.join(os.path.dirname(__file__), "arial.ttf")
+                            if not os.path.exists(font_path):
+                                # Se il font non esiste, usa un fallback comune o avverti
+                                st.warning("Font 'arial.ttf' non trovato. Usando il font di default.")
+                                font = ImageFont.load_default()
+                            else:
+                                font = ImageFont.truetype(font_path, 40)
+                        except Exception:
+                            # In caso di errore, carica il font predefinito
                             font = ImageFont.load_default()
                             
                     for frame_idx in range(total_frames):
@@ -436,17 +452,27 @@ if uploaded_file is not None:
                         
                         if video_title:
                             draw = ImageDraw.Draw(pil_img)
-                            # Usa textbbox per calcolare la dimensione del testo
+                            # Calcola la posizione del testo
                             bbox = draw.textbbox((0, 0), video_title, font=font)
                             text_w = bbox[2] - bbox[0]
                             text_h = bbox[3] - bbox[1]
-                            text_pos = ((width - text_w) / 2, 20)
-                            # Aggiungi un contorno per una migliore visibilità
-                            draw.text((text_pos[0]-2, text_pos[1]-2), video_title, font=font, fill=(0,0,0))
-                            draw.text((text_pos[0]+2, text_pos[1]-2), video_title, font=font, fill=(0,0,0))
-                            draw.text((text_pos[0]-2, text_pos[1]+2), video_title, font=font, fill=(0,0,0))
-                            draw.text((text_pos[0]+2, text_pos[1]+2), video_title, font=font, fill=(0,0,0))
-                            draw.text(text_pos, video_title, font=font, fill=(255,255,255))
+                            
+                            x, y = 0, 0
+                            padding = 20
+
+                            if title_position == "In Alto":
+                                y = padding
+                            elif title_position == "In Basso":
+                                y = height - text_h - padding
+                            
+                            if title_position == "A Sinistra":
+                                x = padding
+                            elif title_position == "A Destra":
+                                x = width - text_w - padding
+                            else: # Centrato orizzontalmente di default
+                                x = (width - text_w) / 2
+                            
+                            draw.text((x, y), video_title, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
                         
                         writer.append_data(np.array(pil_img))
                         
