@@ -281,6 +281,11 @@ def create_video_with_audio(audio_path, video_path_no_audio, final_video_path):
         st.error(f"Errore nella combinazione di video e audio: {e.stderr}")
         return False
 
+# Inizializza session_state per i colori se non esiste
+if 'user_colors' not in st.session_state:
+    st.session_state.user_colors = []
+    st.session_state.num_colors = 4
+
 # Interfaccia Streamlit
 uploaded_file = st.file_uploader(
     "Carica un file audio (MP3, WAV, M4A)", 
@@ -372,12 +377,17 @@ if uploaded_file is not None:
             custom_colors = st.checkbox("Usa colori personalizzati")
             user_colors = []
             if custom_colors:
-                num_colors = st.slider("Numero di colori", 2, 8, 4)
+                num_colors = st.slider("Numero di colori", 2, 8, st.session_state.num_colors, key='num_colors_slider')
+                st.session_state.num_colors = num_colors
+                if len(st.session_state.user_colors) != num_colors:
+                    st.session_state.user_colors = [("#%06x" % random.randint(0, 0xFFFFFF)) for _ in range(num_colors)]
+                
                 cols_color_picker = st.columns(num_colors)
                 for i in range(num_colors):
                     with cols_color_picker[i]:
-                        hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF), key=f"color_picker_{i}")
-                        user_colors.append(tuple(int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)))
+                        hex_color = st.color_picker(f"Colore {i+1}", st.session_state.user_colors[i], key=f"color_picker_{i}")
+                        st.session_state.user_colors[i] = hex_color
+                user_colors = [tuple(int(c[j:j+2], 16) / 255.0 for j in (1, 3, 5)) for c in st.session_state.user_colors]
             else:
                 user_colors = None
             
@@ -387,12 +397,20 @@ if uploaded_file is not None:
         video_title = st.text_input("Inserisci il titolo del video (lascia vuoto per non aggiungerlo)", "")
         
         if video_title:
-            title_position = st.selectbox(
-                "Posizione Titolo:",
-                ["In Alto", "In Basso", "A Sinistra", "A Destra"]
-            )
+            col_title_pos_v, col_title_pos_h = st.columns(2)
+            with col_title_pos_v:
+                title_position_v = st.selectbox(
+                    "Posizione Verticale:",
+                    ["In Alto", "In Basso"]
+                )
+            with col_title_pos_h:
+                title_position_h = st.selectbox(
+                    "Posizione Orizzontale:",
+                    ["A Sinistra", "Centrato", "A Destra"]
+                )
         else:
-            title_position = None
+            title_position_v = None
+            title_position_h = None
 
         if st.button("🎬 Genera Video MP4"):
             with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
@@ -426,16 +444,9 @@ if uploaded_file is not None:
                     # Preparazione font per il titolo
                     if video_title:
                         try:
-                            # Tenta di caricare un font TrueType
-                            font_path = os.path.join(os.path.dirname(__file__), "arial.ttf")
-                            if not os.path.exists(font_path):
-                                # Se il font non esiste, usa un fallback comune o avverti
-                                st.warning("Font 'arial.ttf' non trovato. Usando il font di default.")
-                                font = ImageFont.load_default()
-                            else:
-                                font = ImageFont.truetype(font_path, 40)
-                        except Exception:
-                            # In caso di errore, carica il font predefinito
+                            # Prova a caricare un font comune, altrimenti usa il default
+                            font = ImageFont.truetype("arial.ttf", 40)
+                        except IOError:
                             font = ImageFont.load_default()
                             
                     for frame_idx in range(total_frames):
@@ -457,17 +468,17 @@ if uploaded_file is not None:
                             text_w = bbox[2] - bbox[0]
                             text_h = bbox[3] - bbox[1]
                             
-                            x, y = 0, 0
                             padding = 20
+                            x, y = 0, 0
 
-                            if title_position == "In Alto":
+                            if title_position_v == "In Alto":
                                 y = padding
-                            elif title_position == "In Basso":
+                            elif title_position_v == "In Basso":
                                 y = height - text_h - padding
                             
-                            if title_position == "A Sinistra":
+                            if title_position_h == "A Sinistra":
                                 x = padding
-                            elif title_position == "A Destra":
+                            elif title_position_h == "A Destra":
                                 x = width - text_w - padding
                             else: # Centrato orizzontalmente di default
                                 x = (width - text_w) / 2
