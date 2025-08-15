@@ -29,6 +29,7 @@ class PatternGenerator:
     def __init__(self, audio_features, user_params):
         self.audio_features = audio_features
         self.colors = user_params.get("colors", self.generate_random_colors())
+        self.background_color = user_params.get("background_color", (0, 0, 0))
         self.master_intensity = user_params.get("master_intensity", 1.0)
         self.glitch_effect = user_params.get("glitch_effect", 0.5)
         self.thickness = user_params.get("thickness", 0.5)
@@ -54,6 +55,11 @@ class PatternGenerator:
     def pattern_1_glitch_blocks(self, frame_idx, width, height):
         """Pattern 1: Blocchi colorati glitch come nella prima immagine"""
         pattern = np.zeros((height, width, 3))
+        
+        # Imposta lo sfondo
+        pattern[:, :, 0] = self.background_color[0]
+        pattern[:, :, 1] = self.background_color[1]
+        pattern[:, :, 2] = self.background_color[2]
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -98,6 +104,11 @@ class PatternGenerator:
     def pattern_2_horizontal_stripes_glitch(self, frame_idx, width, height):
         """Pattern 2: Strisce orizzontali con glitch digitale"""
         pattern = np.zeros((height, width, 3))
+        
+        # Imposta lo sfondo
+        pattern[:, :, 0] = self.background_color[0]
+        pattern[:, :, 1] = self.background_color[1]
+        pattern[:, :, 2] = self.background_color[2]
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -150,6 +161,11 @@ class PatternGenerator:
     def pattern_3_curved_flowing_lines(self, frame_idx, width, height):
         """Pattern 3: Linee curve fluide"""
         pattern = np.zeros((height, width, 3))
+        
+        # Imposta lo sfondo
+        pattern[:, :, 0] = self.background_color[0]
+        pattern[:, :, 1] = self.background_color[1]
+        pattern[:, :, 2] = self.background_color[2]
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -346,17 +362,24 @@ if uploaded_file is not None:
         st.markdown("---")
         st.subheader("🎨 Personalizza i Colori")
         
-        custom_colors = st.checkbox("Usa colori personalizzati")
-        user_colors = []
-        if custom_colors:
-            num_colors = st.slider("Numero di colori", 2, 8, 4)
-            cols_color_picker = st.columns(num_colors)
-            for i in range(num_colors):
-                with cols_color_picker[i]:
-                    hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF))
-                    user_colors.append(tuple(int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)))
-        else:
-            user_colors = None
+        col_bg, col_palette = st.columns(2)
+        
+        with col_bg:
+            hex_bg = st.color_picker("Colore Sfondo", "#000000")
+            bg_color_rgb = tuple(int(hex_bg[j:j+2], 16) / 255.0 for j in (1, 3, 5))
+
+        with col_palette:
+            custom_colors = st.checkbox("Usa colori personalizzati")
+            user_colors = []
+            if custom_colors:
+                num_colors = st.slider("Numero di colori", 2, 8, 4)
+                cols_color_picker = st.columns(num_colors)
+                for i in range(num_colors):
+                    with cols_color_picker[i]:
+                        hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF))
+                        user_colors.append(tuple(int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)))
+            else:
+                user_colors = None
             
         # Titolo video
         st.markdown("---")
@@ -381,7 +404,8 @@ if uploaded_file is not None:
                         "master_intensity": master_intensity,
                         "glitch_effect": glitch_effect,
                         "thickness": thickness,
-                        "colors": user_colors
+                        "colors": user_colors,
+                        "background_color": bg_color_rgb
                     }
                     generator = PatternGenerator(audio_features, user_params)
                     total_frames = int(audio_features['duration'] * 30) # 30 FPS
@@ -393,7 +417,6 @@ if uploaded_file is not None:
                     
                     # Preparazione font per il titolo
                     if video_title:
-                        # Streamlit non ha un font di default, usiamo uno dei generici
                         try:
                             font = ImageFont.truetype("arial.ttf", 40)
                         except IOError:
@@ -413,7 +436,10 @@ if uploaded_file is not None:
                         
                         if video_title:
                             draw = ImageDraw.Draw(pil_img)
-                            text_w, text_h = draw.textsize(video_title, font)
+                            # Usa textbbox per calcolare la dimensione del testo
+                            bbox = draw.textbbox((0, 0), video_title, font=font)
+                            text_w = bbox[2] - bbox[0]
+                            text_h = bbox[3] - bbox[1]
                             text_pos = ((width - text_w) / 2, 20)
                             # Aggiungi un contorno per una migliore visibilità
                             draw.text((text_pos[0]-2, text_pos[1]-2), video_title, font=font, fill=(0,0,0))
