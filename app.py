@@ -10,14 +10,14 @@ import tempfile
 import random
 import time
 
-# ─────────────────────────────────────────────────────
-# 🔥 TRUCCO: Disabilita numba/llvmlite prima di importare librosa
-import os
-os.environ['NUMBA_DISABLE_JIT'] = '1'
+# ─────────────────────────────────────────────────────────────
+# 🔥 FORZA LA COMPATIBILITÀ: Disabilita numba e carica setuptools
+os.environ['NUMBA_DISABLE_JIT'] = '1'  # Disabilita JIT di numba
+os.environ['SETUPTOOLS_USE_DISTUTILS'] = 'stdlib'  # Evita errori con pkg_resources
+# ─────────────────────────────────────────────────────────────
 
-# Ora importa librosa (funzionerà anche senza numba)
+# Ora importa librosa (senza paura di llvmlite o pkg_resources)
 import librosa
-# ─────────────────────────────────────────────────────
 
 # --- Configurazione pagina ---
 st.set_page_config(
@@ -176,19 +176,16 @@ class PatternGenerator:
 # --- Estrazione features audio ---
 def extract_audio_features(audio_file):
     try:
-        # Carica audio con parametri sicuri
         y, sr = librosa.load(audio_file, sr=22050, mono=True)
         if len(y) == 0:
             st.error("Il file audio è vuoto o corrotto.")
             return None
         
-        # Calcola STFT
         n_fft = 2048
         hop_length = 512
         stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
         magnitude = np.abs(stft)
         
-        # Riduci il numero di bin per performance
         n_freq_bins = min(50, magnitude.shape[0])
         spectral_features = []
         step = max(1, magnitude.shape[1] // 1000)
@@ -201,8 +198,6 @@ def extract_audio_features(audio_file):
                 frame_data = np.zeros(n_freq_bins)
             spectral_features.append(frame_data)
         
-        # Tempo stimato semplice
-        tempo = 120.0  # fallback
         try:
             onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
             if len(onset_frames) > 1:
@@ -211,8 +206,12 @@ def extract_audio_features(audio_file):
                 if len(intervals) > 0:
                     avg_interval = np.median(intervals)
                     tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
+                else:
+                    tempo = 120.0
+            else:
+                tempo = 120.0
         except:
-            pass  # usa 120 BPM
+            tempo = 120.0
         
         return {
             'spectral_features': spectral_features,
