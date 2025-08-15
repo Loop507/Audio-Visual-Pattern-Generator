@@ -8,9 +8,10 @@ import time
 from scipy.ndimage import gaussian_filter1d
 import colorsys
 import imageio
-from PIL import Image
 import os
 import tempfile
+import soundfile
+import audioread
 
 # Configurazione pagina
 st.set_page_config(
@@ -38,10 +39,6 @@ class PatternGenerator:
             rgb = colorsys.hls_to_rgb(hue, lightness, saturation)
             colors.append(rgb)
         return colors
-    
-    def create_colormap(self):
-        """Crea una colormap personalizzata con i colori generati"""
-        return LinearSegmentedColormap.from_list("custom", self.colors, N=256)
     
     def pattern_1_glitch_blocks(self, frame_idx, width=400, height=300):
         """Pattern 1: Blocchi colorati glitch come nella prima immagine"""
@@ -193,7 +190,7 @@ class PatternGenerator:
 def extract_audio_features(audio_file):
     """Estrae le caratteristiche audio per la visualizzazione"""
     try:
-        y, sr = librosa.load(audio_file, sr=22050, mono=True)
+        y, sr = librosa.load(audio_file, sr=None, mono=True)
         
         if len(y) == 0:
             st.error("Il file audio sembra essere vuoto o corrotto")
@@ -217,12 +214,7 @@ def extract_audio_features(audio_file):
                 frame_data = np.zeros(n_freq_bins)
             spectral_features.append(frame_data)
         
-        try:
-            tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
-        except Exception as beat_error:
-            st.warning(f"Impossibile estrarre il beat: {beat_error}")
-            tempo = 120.0
-            beats = np.array([])
+        tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
         
         return {
             'spectral_features': spectral_features,
@@ -248,7 +240,6 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, duration_se
     
     video_path = os.path.join(tempfile.gettempdir(), f"video_{int(time.time())}.mp4")
 
-    # Utilizza imageio per generare il video con una risoluzione standard
     width, height = 400, 300
     writer = imageio.get_writer(video_path, fps=fps, codec='libx264', macro_block_size=1)
     
@@ -256,7 +247,6 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, duration_se
     status_text = st.empty()
 
     for frame_idx in range(total_frames):
-        # Genera il pattern
         if pattern_type == "Blocchi Glitch":
             pattern = generator.pattern_1_glitch_blocks(frame_idx, width, height)
         elif pattern_type == "Strisce Orizzontali":
@@ -264,18 +254,15 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, duration_se
         else:
             pattern = generator.pattern_3_curved_flowing_lines(frame_idx, width, height)
         
-        # Converte in uint8 (0-255)
         frame_rgb = (pattern * 255).astype(np.uint8)
         writer.append_data(frame_rgb)
 
-        # Aggiorna la barra di progresso
         progress = (frame_idx + 1) / total_frames
         progress_bar.progress(progress)
         status_text.text(f"Creazione video in corso: {int(progress * 100)}%")
         
     writer.close()
     
-    # Pulisci Streamlit UI
     progress_bar.empty()
     status_text.empty()
     
@@ -314,120 +301,58 @@ if uploaded_file is not None:
         with col3:
             st.metric("Sample Rate", f"{audio_features['sample_rate']} Hz")
         
+        st.subheader("🎬 Genera Video Animato")
+        
         pattern_type = st.selectbox(
             "Seleziona il tipo di pattern:",
             ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide"]
         )
         
-        if st.button("🎨 Genera Visualizzazione e Video"):
-            with st.spinner("Generando i pattern visuali..."):
-                
-                generator = PatternGenerator(audio_features)
-                
-                st.subheader("Anteprima Pattern Generati")
-                
-                cols = st.columns(3)
-                for i, col in enumerate(cols):
-                    with col:
-                        frame_idx = i * len(audio_features['spectral_features']) // 3
-                        
-                        if pattern_type == "Blocchi Glitch":
-                            pattern = generator.pattern_1_glitch_blocks(frame_idx)
-                        elif pattern_type == "Strisce Orizzontali":
-                            pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx)
-                        else:
-                            pattern = generator.pattern_3_curved_flowing_lines(frame_idx)
-                        
-                        fig, ax = plt.subplots(figsize=(6, 4))
-                        ax.imshow(pattern, aspect='auto')
-                        ax.axis('off')
-                        ax.set_title(f"Frame {frame_idx}")
-                        
-                        st.pyplot(fig)
-                        plt.close()
-                
-                st.subheader("Esplora i Pattern nel Tempo")
-                frame_slider = st.slider(
-                    "Frame", 
-                    0, 
-                    len(audio_features['spectral_features']) - 1, 
-                    0
-                )
-                
-                if pattern_type == "Blocchi Glitch":
-                    pattern = generator.pattern_1_glitch_blocks(frame_slider)
-                elif pattern_type == "Strisce Orizzontali":
-                    pattern = generator.pattern_2_horizontal_stripes_glitch(frame_slider)
-                else:
-                    pattern = generator.pattern_3_curved_flowing_lines(frame_slider)
-                
-                fig, ax = plt.subplots(figsize=(12, 8))
-                ax.imshow(pattern, aspect='auto')
-                ax.axis('off')
-                ax.set_title(f"Pattern Frame {frame_slider} - {pattern_type}", fontsize=16)
-                
-                st.pyplot(fig)
-                plt.close()
-                
-                st.subheader("🎬 Genera Video Animato")
-                
-                video_duration = st.slider(
-                    "Durata video (secondi)", 
-                    min_value=5, 
-                    max_value=30, 
-                    value=15
-                )
-                video_fps = st.selectbox(
-                    "FPS Video", 
-                    [24, 30, 60], 
-                    index=1
-                )
-                
-                if st.button("🎬 Genera Video MP4"):
-                    with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
-                        try:
-                            video_path = create_video_from_patterns(
-                                audio_features, 
-                                pattern_type, 
-                                fps=video_fps, 
-                                duration_seconds=video_duration
-                            )
-                            
-                            if video_path and os.path.exists(video_path):
-                                with open(video_path, 'rb') as video_file:
-                                    video_bytes = video_file.read()
-                                
-                                if len(video_bytes) > 0:
-                                    st.success("✅ Video generato con successo!")
-                                    st.video(video_bytes)
-                                    
-                                    st.download_button(
-                                        label="📥 Scarica Video MP4",
-                                        data=video_bytes,
-                                        file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
-                                        mime="video/mp4"
-                                    )
-                                else:
-                                    st.error("Il file video è vuoto")
-                            else:
-                                st.error("Impossibile creare il file video")
-                                
-                        except Exception as e:
-                            st.error(f"Errore durante la generazione: {str(e)}")
-                            st.info("Prova con una durata più breve o un FPS più basso")
-                
-                st.subheader("Palette Colori Generata")
-                color_cols = st.columns(len(generator.colors))
-                for i, (col, color) in enumerate(zip(color_cols, generator.colors)):
-                    with col:
-                        color_array = np.full((50, 50, 3), color)
-                        fig, ax = plt.subplots(figsize=(2, 2))
-                        ax.imshow(color_array)
-                        ax.axis('off')
-                        st.pyplot(fig)
-                        plt.close()
-                        st.write(f"Colore {i+1}")
+        video_duration = st.slider(
+            "Durata video (secondi)", 
+            min_value=5, 
+            max_value=30, 
+            value=15
+        )
+        video_fps = st.selectbox(
+            "FPS Video", 
+            [24, 30, 60], 
+            index=1
+        )
         
+        if st.button("🎬 Genera Video MP4"):
+            with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
+                try:
+                    video_path = create_video_from_patterns(
+                        audio_features, 
+                        pattern_type, 
+                        fps=video_fps, 
+                        duration_seconds=video_duration
+                    )
+                    
+                    if video_path and os.path.exists(video_path):
+                        with open(video_path, 'rb') as video_file:
+                            video_bytes = video_file.read()
+                        
+                        if len(video_bytes) > 0:
+                            st.success("✅ Video generato con successo!")
+                            st.video(video_bytes)
+                            
+                            st.download_button(
+                                label="📥 Scarica Video MP4",
+                                data=video_bytes,
+                                file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
+                                mime="video/mp4"
+                            )
+                        else:
+                            st.error("Il file video è vuoto")
+                    else:
+                        st.error("Impossibile creare il file video")
+                        
+                except Exception as e:
+                    st.error(f"Errore durante la generazione: {str(e)}")
+                    st.info("Prova con una durata più breve o un FPS più basso")
+                    
         with st.expander("ℹ️ Come Funziona"):
             st.markdown("""
             **Pattern Generati:**
@@ -463,7 +388,7 @@ with st.sidebar:
     st.markdown("""
     Per deployare su Streamlit Cloud:
     1. Carica il codice su GitHub
-    2. Aggiungi `requirements.txt`
+    2. Aggiungi `requirements.txt` e `packages.txt`
     3. Connetti il repo a Streamlit
     """)
 
