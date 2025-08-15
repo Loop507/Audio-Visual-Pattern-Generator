@@ -1,6 +1,5 @@
 import streamlit as st
 import numpy as np
-import librosa
 import matplotlib.pyplot as plt
 import imageio
 from scipy.ndimage import gaussian_filter1d
@@ -10,6 +9,15 @@ import os
 import tempfile
 import random
 import time
+
+# ─────────────────────────────────────────────────────
+# 🔥 TRUCCO: Disabilita numba/llvmlite prima di importare librosa
+import os
+os.environ['NUMBA_DISABLE_JIT'] = '1'
+
+# Ora importa librosa (funzionerà anche senza numba)
+import librosa
+# ─────────────────────────────────────────────────────
 
 # --- Configurazione pagina ---
 st.set_page_config(
@@ -168,36 +176,43 @@ class PatternGenerator:
 # --- Estrazione features audio ---
 def extract_audio_features(audio_file):
     try:
+        # Carica audio con parametri sicuri
         y, sr = librosa.load(audio_file, sr=22050, mono=True)
         if len(y) == 0:
             st.error("Il file audio è vuoto o corrotto.")
             return None
         
+        # Calcola STFT
         n_fft = 2048
         hop_length = 512
         stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
         magnitude = np.abs(stft)
         
+        # Riduci il numero di bin per performance
         n_freq_bins = min(50, magnitude.shape[0])
         spectral_features = []
         step = max(1, magnitude.shape[1] // 1000)
 
         for frame in range(0, magnitude.shape[1], step):
             frame_data = magnitude[:n_freq_bins, frame]
-            frame_data = frame_data / (np.max(frame_data) + 1e-8)  # Evita divisione per zero
+            if np.max(frame_data) > 0:
+                frame_data = frame_data / np.max(frame_data)
+            else:
+                frame_data = np.zeros(n_freq_bins)
             spectral_features.append(frame_data)
         
+        # Tempo stimato semplice
+        tempo = 120.0  # fallback
         try:
             onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
             if len(onset_frames) > 1:
                 onset_times = librosa.frames_to_time(onset_frames, sr=sr)
                 intervals = np.diff(onset_times)
-                avg_interval = np.median(intervals) if len(intervals) > 0 else 1.0
-                tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
-            else:
-                tempo = 120.0
+                if len(intervals) > 0:
+                    avg_interval = np.median(intervals)
+                    tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
         except:
-            tempo = 120.0
+            pass  # usa 120 BPM
         
         return {
             'spectral_features': spectral_features,
@@ -232,7 +247,7 @@ def create_video_from_patterns(audio_features, pattern_type, fps=30, duration_se
             mode='I',
             codec='libx264',
             pixelformat='yuv420p',
-            output_params=['-crf', '23']  # Qualità buona
+            output_params=['-crf', '23']
         )
         
         progress_bar = st.progress(0)
