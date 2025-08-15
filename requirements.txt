@@ -3,6 +3,6 @@ numpy
 librosa
 matplotlib
 scipy
-imageio
+imageio[ffmpeg]
 Pillow
 setuptools
