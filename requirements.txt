@@ -7,3 +7,5 @@ imageio[ffmpeg]==2.34.1
 Pillow
 setuptools
 soundfile
+audioread
+numba==0.59.1
