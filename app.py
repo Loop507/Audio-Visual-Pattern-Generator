@@ -218,7 +218,7 @@ class PatternGenerator:
         return pattern
         
     def pattern_4_monoscope(self, frame_idx, width, height):
-        """Pattern 4: Effetto Monoscopio con reattività audio"""
+        """Pattern 4: Effetto Monoscopio con reattività audio, solo le barre colorate"""
         # Crea un'immagine PIL vuota con il colore di sfondo
         pil_img = Image.new("RGB", (width, height), 
                              tuple(int(c * 255) for c in self.background_color))
@@ -231,19 +231,6 @@ class PatternGenerator:
         glitch_shift = 0
         if random.random() < self.glitch_effect:
             glitch_shift = random.randint(-5, 5)
-
-        # Disegna le linee a croce
-        line_thickness = max(2, int(6 * self.thickness))
-        x_center, y_center = width // 2 + glitch_shift, height // 2 + glitch_shift
-
-        draw.line(
-            (x_center, 0, x_center, height), 
-            fill="white", width=line_thickness
-        )
-        draw.line(
-            (0, y_center, width, y_center), 
-            fill="white", width=line_thickness
-        )
 
         # Disegna le barre colorate
         bar_height = height // 8
