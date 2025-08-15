@@ -28,12 +28,7 @@ st.markdown("Carica un brano musicale e guarda i pattern astratti generati dalle
 class PatternGenerator:
     def __init__(self, audio_features, user_params):
         self.audio_features = audio_features
-        # Assicura che self.colors sia sempre una lista
-        if user_params.get("colors") is None:
-            self.colors = self.generate_random_colors()
-        else:
-            self.colors = user_params.get("colors")
-            
+        self.colors = user_params.get("colors", self.generate_random_colors())
         self.background_color = user_params.get("background_color", (0, 0, 0))
         self.master_intensity = user_params.get("master_intensity", 1.0)
         self.glitch_effect = user_params.get("glitch_effect", 0.5)
@@ -221,46 +216,6 @@ class PatternGenerator:
                                                    sigma=0.5, axis=1)
         
         return pattern
-        
-    def pattern_4_monoscope(self, frame_idx, width, height):
-        """Pattern 4: Effetto Monoscopio con reattività audio, solo le barre colorate"""
-        # Crea un'immagine PIL vuota con il colore di sfondo
-        pil_img = Image.new("RGB", (width, height), 
-                             tuple(int(c * 255) for c in self.background_color))
-        draw = ImageDraw.Draw(pil_img)
-
-        # Calcola l'intensità media per il frame corrente
-        intensity = self.get_intensity(frame_idx)
-        
-        # Effetto glitch (in questo caso sposta leggermente le barre)
-        glitch_shift = 0
-        if random.random() < self.glitch_effect:
-            glitch_shift = random.randint(-5, 5)
-
-        # Disegna le barre colorate
-        bar_height = height // 8
-        num_colors_to_show = len(self.colors)
-        
-        # Sposta la posizione orizzontale delle barre in base all'effetto glitch
-        bar_width = width // num_colors_to_show
-        
-        for i in range(num_colors_to_show):
-            color = self.colors[i]
-            x0 = i * bar_width + glitch_shift
-            y0 = height - bar_height
-            x1 = x0 + bar_width
-            y1 = height
-            
-            # Fai reagire le barre all'intensità audio
-            color_mod = [c * (0.5 + intensity * 0.5) for c in color]
-            
-            draw.rectangle(
-                (x0, y0, x1, y1), 
-                fill=tuple(int(c * 255) for c in color_mod)
-            )
-
-        # Converte l'immagine PIL in un array NumPy
-        return np.array(pil_img) / 255.0
 
 def extract_audio_features(audio_file):
     """Estrae le caratteristiche audio per la visualizzazione"""
@@ -370,7 +325,7 @@ if uploaded_file is not None:
         with col_select:
             pattern_type = st.selectbox(
                 "Seleziona il tipo di pattern:",
-                ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide", "Monoscopio"]
+                ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide"]
             )
         
         with col_slider:
@@ -499,10 +454,8 @@ if uploaded_file is not None:
                             pattern = generator.pattern_1_glitch_blocks(frame_idx, width, height)
                         elif pattern_type == "Strisce Orizzontali":
                             pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx, width, height)
-                        elif pattern_type == "Linee Curve Fluide":
+                        else:
                             pattern = generator.pattern_3_curved_flowing_lines(frame_idx, width, height)
-                        else: # Monoscopio
-                            pattern = generator.pattern_4_monoscope(frame_idx, width, height)
                         
                         # Converte in uint8 e aggiungi il titolo
                         frame_rgb = (pattern * 255).astype(np.uint8)
