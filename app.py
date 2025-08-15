@@ -303,62 +303,92 @@ def extract_audio_features(audio_file):
         st.info("Suggerimento: prova con un file WAV o MP3 più piccolo")
         return None
 
-# Funzione creata per la generazione del video
-def create_video_from_patterns(audio_features, pattern_type, fps=30):
+def create_video_from_patterns(audio_features, pattern_type, fps=30, max_duration=30):
     """
-    Genera un video MP4 a partire dai pattern visivi.
+    Genera un video MP4 a partire dai pattern visivi - VERSIONE CORRETTA
     
     :param audio_features: Dizionario con le caratteristiche audio.
     :param pattern_type: Tipo di pattern da generare.
     :param fps: Frame per secondo del video.
+    :param max_duration: Durata massima del video in secondi.
     :return: Percorso del file video creato.
     """
-    # Calcola il numero totale di frame in base alla durata dell'audio e all'FPS
-    num_frames = int(audio_features['duration'] * fps)
-    
-    # Crea un generatore di pattern
-    generator = PatternGenerator(audio_features)
-    
-    # Crea un file temporaneo per il video
-    temp_video_file = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-    video_path = temp_video_file.name
-    temp_video_file.close()
-    
     try:
-        # Inizializza il writer di imageio per il video
-        writer = imageio.get_writer(video_path, fps=fps)
+        # Limita la durata per evitare file troppo grandi
+        video_duration = min(audio_features['duration'], max_duration)
+        num_frames = int(video_duration * fps)
         
-        # Genera e aggiunge ogni frame al video
+        # Risoluzione fissa per evitare problemi
+        width, height = 800, 600
+        
+        # Crea il generatore di pattern
+        generator = PatternGenerator(audio_features)
+        
+        # Progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Lista per contenere i frame
+        frames = []
+        
+        # Genera tutti i frame
         for i in range(num_frames):
+            # Aggiorna progress
+            progress = i / num_frames
+            progress_bar.progress(progress)
+            status_text.text(f"Generando frame {i+1}/{num_frames}")
+            
             # Calcola l'indice del frame audio da usare
             audio_frame_idx = int(i * len(audio_features['spectral_features']) / num_frames)
             
             # Seleziona e genera il pattern
             if pattern_type == "Blocchi Glitch":
-                pattern = generator.pattern_1_glitch_blocks(audio_frame_idx)
+                pattern = generator.pattern_1_glitch_blocks(audio_frame_idx, width, height)
             elif pattern_type == "Strisce Orizzontali":
-                pattern = generator.pattern_2_horizontal_stripes_glitch(audio_frame_idx)
+                pattern = generator.pattern_2_horizontal_stripes_glitch(audio_frame_idx, width, height)
             else:  # Linee Curve Fluide
-                pattern = generator.pattern_3_curved_flowing_lines(audio_frame_idx)
+                pattern = generator.pattern_3_curved_flowing_lines(audio_frame_idx, width, height)
             
-            # Converte l'array NumPy in un'immagine PIL
-            # Nota: imageio preferisce i valori in un range 0-255 per il video
-            image = Image.fromarray((pattern * 255).astype(np.uint8))
+            # Assicurati che i valori siano nel range corretto [0, 1]
+            pattern = np.clip(pattern, 0, 1)
             
-            # Aggiunge l'immagine al video
-            writer.append_data(np.array(image))
-            
-        writer.close()
+            # Converte in uint8 per il video
+            frame_uint8 = (pattern * 255).astype(np.uint8)
+            frames.append(frame_uint8)
         
+        # Pulisci la progress bar
+        progress_bar.empty()
+        status_text.text("Salvando il video...")
+        
+        # Crea il file temporaneo
+        temp_video = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        video_path = temp_video.name
+        temp_video.close()
+        
+        # Scrivi il video usando imageio
+        with imageio.get_writer(video_path, fps=fps, format='mp4', codec='libx264') as writer:
+            for frame in frames:
+                writer.append_data(frame)
+        
+        status_text.text("Video completato!")
+        
+        # Verifica che il file sia stato creato correttamente
+        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+            return video_path
+        else:
+            raise Exception("Il file video non è stato creato correttamente")
+            
     except Exception as e:
-        st.error(f"Errore durante la generazione del video: {e}")
-        if os.path.exists(video_path):
-            os.remove(video_path)
+        st.error(f"Errore nella generazione video: {str(e)}")
+        # Cleanup in caso di errore
+        if 'video_path' in locals() and os.path.exists(video_path):
+            try:
+                os.remove(video_path)
+            except:
+                pass
         return None
-    
-    return video_path
 
-# --- Intefaccia Streamlit ---
+# --- Interfaccia Streamlit ---
 uploaded_file = st.file_uploader(
     "Carica un file audio (MP3, WAV, M4A)", 
     type=['mp3', 'wav', 'm4a', 'flac']
@@ -454,60 +484,57 @@ if uploaded_file is not None:
                 st.pyplot(fig)
                 plt.close()
                 
-                # SEZIONE GENERAZIONE VIDEO
+                # SEZIONE GENERAZIONE VIDEO CORRETTA
                 st.subheader("🎬 Genera Video Animato")
                 
-                st.markdown("**🎥 Video MP4**")
+                st.info("💡 Il video sarà limitato a massimo 30 secondi per performance ottimali")
                 
-                # L'FPS del video è fisso, non c'è più lo slider della durata
-                video_fps = st.selectbox(
-                    "FPS Video", 
-                    [24, 30, 60], 
-                    index=1
-                )
+                # Opzioni per il video
+                col_fps, col_duration = st.columns(2)
+                with col_fps:
+                    video_fps = st.selectbox("FPS Video", [24, 30], index=1)
+                with col_duration:
+                    max_duration = st.slider("Durata massima (secondi)", 5, 30, 15)
                 
                 if st.button("🎬 Genera Video MP4", key="video_btn"):
-                    with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
-                        try:
-                            # Chiamata alla nuova funzione, con la durata dell'audio
-                            video_path = create_video_from_patterns(
-                                audio_features, 
-                                pattern_type, 
-                                fps=video_fps
+                    try:
+                        video_path = create_video_from_patterns(
+                            audio_features, 
+                            pattern_type, 
+                            fps=video_fps,
+                            max_duration=max_duration
+                        )
+                        
+                        if video_path and os.path.exists(video_path):
+                            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
+                            st.success(f"✅ Video generato! Dimensione: {file_size:.2f} MB")
+                            
+                            # Leggi il file video
+                            with open(video_path, 'rb') as video_file:
+                                video_bytes = video_file.read()
+                            
+                            # Mostra il video
+                            st.video(video_bytes)
+                            
+                            # Pulsante di download
+                            st.download_button(
+                                label="📥 Scarica Video MP4",
+                                data=video_bytes,
+                                file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
+                                mime="video/mp4"
                             )
                             
-                            if video_path and os.path.exists(video_path):
-                                file_size = os.path.getsize(video_path)
-                                st.info(f"Video creato: {file_size} bytes")
-                                
-                                with open(video_path, 'rb') as video_file:
-                                    video_bytes = video_file.read()
-                                
-                                if len(video_bytes) > 0:
-                                    st.success("✅ Video generato con successo!")
-                                    
-                                    try:
-                                        st.video(video_bytes)
-                                    except Exception as display_error:
-                                        st.warning(f"Impossibile visualizzare il video: {display_error}")
-                                        st.info("Ma puoi scaricarlo qui sotto!")
-                                    
-                                    st.download_button(
-                                        label="📥 Scarica Video MP4",
-                                        data=video_bytes,
-                                        file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
-                                        mime="video/mp4"
-                                    )
-                                else:
-                                    st.error("Il file video è vuoto")
-                            else:
-                                st.error("Impossibile creare il file video")
-                                
-                        except Exception as e:
-                            st.error(f"Errore durante la generazione: {str(e)}")
-                            st.info("Prova con un FPS più basso")
-                
-                # RIMOZIONE DELLA SEZIONE GIF
+                            # Pulisci il file temporaneo
+                            try:
+                                os.remove(video_path)
+                            except:
+                                pass
+                        else:
+                            st.error("❌ Errore nella generazione del video")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Errore: {str(e)}")
+                        st.info("💡 Prova con un FPS più basso o una durata minore")
                 
                 # Informazioni sui colori
                 st.subheader("Palette Colori Generata")
@@ -532,12 +559,18 @@ if uploaded_file is not None:
             2. **Strisce Orizzontali**: Linee orizzontali sottili con distorsioni e spostamenti
             3. **Linee Curve Fluide**: Curve sinusoidali che scorrono fluidamente seguendo l'audio
             
-            **Caratteristiche:**
-            - Colori casuali generati ad ogni esecuzione
-            - Sincronizzazione con le frequenze audio
-            - Effetti di glitch e distorsione
-            - Pattern mai identici tra esecuzioni diverse
-            - **Esportazione in Video MP4**
+            **Caratteristiche Video:**
+            - Risoluzione: 800x600 pixel
+            - Durata massima: 30 secondi
+            - Formato: MP4 (codec H.264)
+            - Sincronizzazione con frequenze audio
+            - Pattern sempre unici
+            
+            **Problemi Risolti:**
+            - Gestione corretta dei frame
+            - Formato colori compatibile
+            - Gestione memoria ottimizzata
+            - Progress bar per il feedback
             """)
 
 # Sidebar con informazioni
@@ -552,16 +585,18 @@ with st.sidebar:
     - Colori sempre casuali
     - Sincronizzazione tempo-reale
     - Effetti visuali dinamici
-    - **Esportazione Video**
+    - **Esportazione Video MP4** ✅
     """)
     
-    st.markdown("### 🚀 Deploy su Streamlit")
-    st.markdown("""
-    Per deployare su Streamlit Cloud:
-    1. Carica il codice su GitHub
-    2. Aggiungi requirements.txt
-    3. Connetti il repo a Streamlit
-    """)
+    st.markdown("### 🔧 Requirements.txt")
+    st.code("""streamlit
+numpy
+librosa
+matplotlib
+scipy
+pillow
+imageio[ffmpeg]
+colorsys""", language="text")
 
 # Footer
 st.markdown("---")
