@@ -1,8 +1,8 @@
-streamlit
+streamlit==1.34.0
 numpy
-librosa
+librosa==0.10.1
 matplotlib
 scipy
-imageio[ffmpeg]
+imageio[ffmpeg]==2.34.1
 Pillow
 setuptools
