@@ -216,6 +216,73 @@ class PatternGenerator:
                                                    sigma=0.5, axis=1)
         
         return pattern
+        
+    def pattern_4_monoscope(self, frame_idx, width, height):
+        """Pattern 4: Effetto Monoscopio con reattività audio"""
+        # Crea un'immagine PIL vuota con il colore di sfondo
+        pil_img = Image.new("RGB", (width, height), 
+                             tuple(int(c * 255) for c in self.background_color))
+        draw = ImageDraw.Draw(pil_img)
+
+        # Calcola l'intensità media per il frame corrente
+        intensity = self.get_intensity(frame_idx)
+        
+        # Effetto glitch
+        glitch_shift = 0
+        if random.random() < self.glitch_effect:
+            glitch_shift = random.randint(-5, 5)
+
+        # Disegna il cerchio principale
+        circle_radius = int(width * (0.3 + 0.2 * intensity * self.master_intensity))
+        x_center, y_center = width // 2 + glitch_shift, height // 2 + glitch_shift
+        draw.ellipse(
+            (x_center - circle_radius, y_center - circle_radius,
+             x_center + circle_radius, y_center + circle_radius),
+            outline="white",
+            width=max(2, int(8 * self.thickness))
+        )
+
+        # Disegna le linee a croce
+        line_thickness = max(2, int(6 * self.thickness))
+        draw.line(
+            (x_center, 0, x_center, height), 
+            fill="white", width=line_thickness
+        )
+        draw.line(
+            (0, y_center, width, y_center), 
+            fill="white", width=line_thickness
+        )
+
+        # Disegna le barre colorate
+        bar_height = height // 8
+        num_colors_to_show = len(self.colors)
+        bar_width = width // num_colors_to_show
+        
+        for i in range(num_colors_to_show):
+            color = self.colors[i]
+            x0 = i * bar_width
+            y0 = height - bar_height
+            x1 = x0 + bar_width
+            y1 = height
+            
+            # Fai reagire le barre all'intensità audio
+            color_mod = [c * (0.5 + intensity * 0.5) for c in color]
+            
+            draw.rectangle(
+                (x0, y0, x1, y1), 
+                fill=tuple(int(c * 255) for c in color_mod)
+            )
+
+        # Disegna una griglia nel cerchio
+        grid_spacing = int(30 * (1 - self.thickness))
+        if grid_spacing > 0:
+            for i in range(x_center - circle_radius, x_center + circle_radius, grid_spacing):
+                draw.line((i, y_center - circle_radius, i, y_center + circle_radius), fill=(100, 100, 100))
+            for i in range(y_center - circle_radius, y_center + circle_radius, grid_spacing):
+                draw.line((x_center - circle_radius, i, x_center + circle_radius, i), fill=(100, 100, 100))
+
+        # Converte l'immagine PIL in un array NumPy
+        return np.array(pil_img) / 255.0
 
 def extract_audio_features(audio_file):
     """Estrae le caratteristiche audio per la visualizzazione"""
@@ -325,7 +392,7 @@ if uploaded_file is not None:
         with col_select:
             pattern_type = st.selectbox(
                 "Seleziona il tipo di pattern:",
-                ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide"]
+                ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide", "Monoscopio"]
             )
         
         with col_slider:
@@ -454,8 +521,10 @@ if uploaded_file is not None:
                             pattern = generator.pattern_1_glitch_blocks(frame_idx, width, height)
                         elif pattern_type == "Strisce Orizzontali":
                             pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx, width, height)
-                        else:
+                        elif pattern_type == "Linee Curve Fluide":
                             pattern = generator.pattern_3_curved_flowing_lines(frame_idx, width, height)
+                        else: # Monoscopio
+                            pattern = generator.pattern_4_monoscope(frame_idx, width, height)
                         
                         # Converte in uint8 e aggiungi il titolo
                         frame_rgb = (pattern * 255).astype(np.uint8)
