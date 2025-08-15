@@ -13,6 +13,7 @@ import tempfile
 import soundfile
 import audioread
 import subprocess
+from PIL import Image, ImageDraw, ImageFont
 
 # Configurazione pagina
 st.set_page_config(
@@ -25,9 +26,12 @@ st.title("🎵 Audio Visual Pattern Generator")
 st.markdown("Carica un brano musicale e guarda i pattern astratti generati dalle frequenze!")
 
 class PatternGenerator:
-    def __init__(self, audio_features):
+    def __init__(self, audio_features, user_params):
         self.audio_features = audio_features
-        self.colors = self.generate_random_colors()
+        self.colors = user_params.get("colors", self.generate_random_colors())
+        self.master_intensity = user_params.get("master_intensity", 1.0)
+        self.glitch_effect = user_params.get("glitch_effect", 0.5)
+        self.thickness = user_params.get("thickness", 0.5)
         
     def generate_random_colors(self):
         """Genera una palette di colori casuali ogni volta"""
@@ -41,14 +45,20 @@ class PatternGenerator:
             colors.append(rgb)
         return colors
     
+    def get_intensity(self, frame_idx, base_intensity=1.0):
+        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
+        # Usa la media per una reattività più fluida
+        average_intensity = np.mean(freq_data) * base_intensity * self.master_intensity
+        return average_intensity
+
     def pattern_1_glitch_blocks(self, frame_idx, width, height):
         """Pattern 1: Blocchi colorati glitch come nella prima immagine"""
         pattern = np.zeros((height, width, 3))
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
-        num_blocks_x = random.randint(15, 40)
-        num_blocks_y = random.randint(10, 25)
+        num_blocks_x = int(15 + 25 * self.thickness)
+        num_blocks_y = int(10 + 15 * self.thickness)
         
         block_width = width // num_blocks_x
         block_height = height // num_blocks_y
@@ -58,14 +68,16 @@ class PatternGenerator:
                 freq_idx = (i + j) % len(freq_data)
                 intensity = freq_data[freq_idx]
                 
-                if intensity < 0.3 and random.random() < 0.4:
+                # Sincronizzazione con il volume: blocchi meno visibili con audio basso
+                if intensity < 0.1 and random.random() > (1 - self.glitch_effect):
                     continue
                 
                 actual_width = int(block_width * (0.5 + intensity * 0.5))
                 actual_height = int(block_height * (0.5 + intensity * 0.5))
                 
-                x_offset = random.randint(-5, 5) if intensity > 0.7 else 0
-                y_offset = random.randint(-3, 3) if intensity > 0.6 else 0
+                # Effetto glitch controllato
+                x_offset = random.randint(-5, 5) if intensity > 0.7 * self.glitch_effect else 0
+                y_offset = random.randint(-3, 3) if intensity > 0.6 * self.glitch_effect else 0
                 
                 x_start = max(0, i * block_width + x_offset)
                 y_start = max(0, j * block_height + y_offset)
@@ -75,7 +87,7 @@ class PatternGenerator:
                 color_idx = int((intensity + i/num_blocks_x + j/num_blocks_y) * len(self.colors)) % len(self.colors)
                 color = self.colors[color_idx]
                 
-                brightness = 0.4 + intensity * 0.6
+                brightness = 0.4 + intensity * 0.6 * self.master_intensity
                 final_color = [c * brightness for c in color]
                 
                 if x_start < x_end and y_start < y_end:
@@ -89,7 +101,7 @@ class PatternGenerator:
         
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
-        stripe_height = random.randint(1, 4)
+        stripe_height = int(max(1, 4 * self.thickness))
         
         y = 0
         stripe_idx = 0
@@ -99,17 +111,18 @@ class PatternGenerator:
             intensity = freq_data[freq_idx]
             
             current_stripe_height = stripe_height
-            if intensity > 0.8:
+            if intensity > 0.8 * self.master_intensity:
                 current_stripe_height = random.randint(1, 8)
             
-            if intensity > 0.5:
+            if intensity > 0.5 * self.master_intensity:
                 stripe_width = width
                 x_start = 0
             else:
                 stripe_width = int(width * (0.3 + intensity * 0.7))
                 x_start = random.randint(0, max(1, width - stripe_width))
             
-            if intensity > 0.7 and random.random() < 0.3:
+            # Effetto glitch controllato
+            if intensity > 0.7 and random.random() < self.glitch_effect:
                 x_offset = random.randint(-20, 20)
                 x_start = max(0, min(width - stripe_width, x_start + x_offset))
             
@@ -117,10 +130,10 @@ class PatternGenerator:
             base_color = self.colors[color_idx]
             
             color = list(base_color)
-            if intensity > 0.6 and random.random() < 0.2:
+            if intensity > 0.6 and random.random() < self.glitch_effect:
                 color[random.randint(0, 2)] = random.random()
             
-            brightness = 0.3 + intensity * 0.7
+            brightness = 0.3 + intensity * 0.7 * self.master_intensity
             final_color = [c * brightness for c in color]
             
             y_end = min(height, y + current_stripe_height)
@@ -148,23 +161,23 @@ class PatternGenerator:
             freq_idx = curve_idx % len(freq_data)
             intensity = freq_data[freq_idx]
             
-            if intensity < 0.2:
+            if intensity < 0.2 * self.master_intensity:
                 continue
             
-            amplitude = height * 0.3 * intensity
+            amplitude = height * 0.3 * intensity * self.master_intensity
             frequency = (curve_idx + 1) * 0.02
-            phase = frame_idx * 0.1 + curve_idx * 0.5
+            phase = frame_idx * 0.1 + curve_idx * 0.5 * self.glitch_effect
             
             center_y = height * (curve_idx / num_curves)
             
             curve_y = center_y + amplitude * np.sin(x_coords * frequency + phase)
             
-            line_thickness = max(1, int(5 * intensity))
+            line_thickness = max(1, int(5 * intensity * self.thickness))
             
             color_idx = curve_idx % len(self.colors)
             base_color = self.colors[color_idx]
             
-            color_variation = 0.8 + intensity * 0.4
+            color_variation = 0.8 + intensity * 0.4 * self.glitch_effect
             final_color = [c * color_variation for c in base_color]
             
             for x in range(width):
@@ -285,7 +298,7 @@ if uploaded_file is not None:
         with col3:
             st.metric("Sample Rate", f"{audio_features['sample_rate']} Hz")
         
-        st.subheader("🎬 Genera Video Animato")
+        st.subheader("🎬 Controlli per la Generazione Video")
         
         col_select, col_slider = st.columns(2)
         with col_select:
@@ -299,6 +312,56 @@ if uploaded_file is not None:
                 "Seleziona l'aspect ratio (proporzioni):",
                 ["1:1 (Square)", "9:16 (Verticale)", "16:9 (Orizzontale)"]
             )
+        
+        # Nuovi controlli master
+        st.subheader("⚙️ Controlli Master degli Effetti")
+        
+        col_controls = st.columns(3)
+        with col_controls[0]:
+            master_intensity = st.slider(
+                "Intensità Master",
+                min_value=0.1,
+                max_value=2.0,
+                value=1.0,
+                help="Controlla la reattività dei pattern ai cambiamenti di volume."
+            )
+        with col_controls[1]:
+            glitch_effect = st.slider(
+                "Effetto Glitch/Random",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                help="Regola l'intensità degli effetti casuali e di distorsione."
+            )
+        with col_controls[2]:
+            thickness = st.slider(
+                "Spessore Elementi",
+                min_value=0.1,
+                max_value=2.0,
+                value=0.5,
+                help="Controlla lo spessore delle linee, delle strisce o dei blocchi."
+            )
+        
+        # Scelta dei colori
+        st.markdown("---")
+        st.subheader("🎨 Personalizza i Colori")
+        
+        custom_colors = st.checkbox("Usa colori personalizzati")
+        user_colors = []
+        if custom_colors:
+            num_colors = st.slider("Numero di colori", 2, 8, 4)
+            cols_color_picker = st.columns(num_colors)
+            for i in range(num_colors):
+                with cols_color_picker[i]:
+                    hex_color = st.color_picker(f"Colore {i+1}", "#%06x" % random.randint(0, 0xFFFFFF))
+                    user_colors.append(tuple(int(hex_color[j:j+2], 16) / 255.0 for j in (1, 3, 5)))
+        else:
+            user_colors = None
+            
+        # Titolo video
+        st.markdown("---")
+        st.subheader("✍️ Aggiungi un Titolo")
+        video_title = st.text_input("Inserisci il titolo del video (lascia vuoto per non aggiungerlo)", "")
         
         if st.button("🎬 Genera Video MP4"):
             with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
@@ -314,7 +377,13 @@ if uploaded_file is not None:
                     # Genera il video senza audio usando imageio
                     video_no_audio_path = os.path.join(tempfile.gettempdir(), f"video_no_audio_{int(time.time())}.mp4")
                     
-                    generator = PatternGenerator(audio_features)
+                    user_params = {
+                        "master_intensity": master_intensity,
+                        "glitch_effect": glitch_effect,
+                        "thickness": thickness,
+                        "colors": user_colors
+                    }
+                    generator = PatternGenerator(audio_features, user_params)
                     total_frames = int(audio_features['duration'] * 30) # 30 FPS
                     
                     writer = imageio.get_writer(video_no_audio_path, fps=30, codec='libx264', macro_block_size=1)
@@ -322,6 +391,14 @@ if uploaded_file is not None:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
+                    # Preparazione font per il titolo
+                    if video_title:
+                        # Streamlit non ha un font di default, usiamo uno dei generici
+                        try:
+                            font = ImageFont.truetype("arial.ttf", 40)
+                        except IOError:
+                            font = ImageFont.load_default()
+                            
                     for frame_idx in range(total_frames):
                         if pattern_type == "Blocchi Glitch":
                             pattern = generator.pattern_1_glitch_blocks(frame_idx, width, height)
@@ -330,8 +407,22 @@ if uploaded_file is not None:
                         else:
                             pattern = generator.pattern_3_curved_flowing_lines(frame_idx, width, height)
                         
+                        # Converte in uint8 e aggiungi il titolo
                         frame_rgb = (pattern * 255).astype(np.uint8)
-                        writer.append_data(frame_rgb)
+                        pil_img = Image.fromarray(frame_rgb)
+                        
+                        if video_title:
+                            draw = ImageDraw.Draw(pil_img)
+                            text_w, text_h = draw.textsize(video_title, font)
+                            text_pos = ((width - text_w) / 2, 20)
+                            # Aggiungi un contorno per una migliore visibilità
+                            draw.text((text_pos[0]-2, text_pos[1]-2), video_title, font=font, fill=(0,0,0))
+                            draw.text((text_pos[0]+2, text_pos[1]-2), video_title, font=font, fill=(0,0,0))
+                            draw.text((text_pos[0]-2, text_pos[1]+2), video_title, font=font, fill=(0,0,0))
+                            draw.text((text_pos[0]+2, text_pos[1]+2), video_title, font=font, fill=(0,0,0))
+                            draw.text(text_pos, video_title, font=font, fill=(255,255,255))
+                        
+                        writer.append_data(np.array(pil_img))
                         
                         progress = (frame_idx + 1) / total_frames
                         progress_bar.progress(progress)
@@ -366,6 +457,9 @@ if uploaded_file is not None:
                     os.remove(temp_audio_path)
                     if os.path.exists(final_video_path):
                         os.remove(final_video_path)
+                        
+                    progress_bar.empty()
+                    status_text.empty()
 
                 except Exception as e:
                     st.error(f"Errore durante la generazione: {str(e)}")
