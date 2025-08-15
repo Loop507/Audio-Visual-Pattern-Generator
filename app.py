@@ -11,12 +11,11 @@ import random
 import time
 
 # ─────────────────────────────────────────────────────────────
-# 🔥 FORZA LA COMPATIBILITÀ: Disabilita numba e carica setuptools
-os.environ['NUMBA_DISABLE_JIT'] = '1'  # Disabilita JIT di numba
-os.environ['SETUPTOOLS_USE_DISTUTILS'] = 'stdlib'  # Evita errori con pkg_resources
+# 🔥 DISABILITA NUMBA PER COMPATIBILITÀ CON PYTHON 3.13
+os.environ['NUMBA_DISABLE_JIT'] = '1'
 # ─────────────────────────────────────────────────────────────
 
-# Ora importa librosa (senza paura di llvmlite o pkg_resources)
+# Ora importa librosa (senza paura di get_call_template)
 import librosa
 
 # --- Configurazione pagina ---
