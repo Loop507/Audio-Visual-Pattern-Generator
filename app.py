@@ -2,28 +2,16 @@ import streamlit as st
 import numpy as np
 import librosa
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.colors import LinearSegmentedColormap
-import io
-import random
-import time
-from scipy import signal
+import imageio
 from scipy.ndimage import gaussian_filter1d
 import colorsys
-import imageio
 from PIL import Image
 import os
 import tempfile
+import random
+import time
 
-# Prova a importare OpenCV, se fallisce usa solo imageio
-try:
-    import cv2
-    OPENCV_AVAILABLE = True
-except ImportError:
-    OPENCV_AVAILABLE = False
-    st.warning("OpenCV non disponibile, usando imageio per il video")
-
-# Configurazione pagina
+# --- Configurazione pagina ---
 st.set_page_config(
     page_title="Audio Visual Pattern Generator",
     page_icon="🎵",
@@ -33,13 +21,13 @@ st.set_page_config(
 st.title("🎵 Audio Visual Pattern Generator")
 st.markdown("Carica un brano musicale e guarda i pattern astratti generati dalle frequenze!")
 
+# --- Classe PatternGenerator ---
 class PatternGenerator:
     def __init__(self, audio_features):
         self.audio_features = audio_features
         self.colors = self.generate_random_colors()
         
     def generate_random_colors(self):
-        """Genera una palette di colori casuali ogni volta"""
         base_hue = random.random()
         colors = []
         for i in range(6):
@@ -50,12 +38,7 @@ class PatternGenerator:
             colors.append(rgb)
         return colors
     
-    def create_colormap(self):
-        """Crea una colormap personalizzata con i colori generati"""
-        return LinearSegmentedColormap.from_list("custom", self.colors, N=256)
-    
     def pattern_1_glitch_blocks(self, frame_idx, width=400, height=300):
-        """Pattern 1: Blocchi colorati glitch"""
         pattern = np.zeros((height, width, 3))
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -94,7 +77,6 @@ class PatternGenerator:
         return pattern
     
     def pattern_2_horizontal_stripes_glitch(self, frame_idx, width=400, height=300):
-        """Pattern 2: Strisce orizzontali con glitch digitale"""
         pattern = np.zeros((height, width, 3))
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -142,7 +124,6 @@ class PatternGenerator:
         return pattern
     
     def pattern_3_curved_flowing_lines(self, frame_idx, width=400, height=300):
-        """Pattern 3: Linee curve fluide"""
         pattern = np.zeros((height, width, 3))
         freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
         
@@ -184,15 +165,14 @@ class PatternGenerator:
         
         return pattern
 
+# --- Estrazione features audio ---
 def extract_audio_features(audio_file):
-    """Estrae le caratteristiche audio per la visualizzazione"""
     try:
         y, sr = librosa.load(audio_file, sr=22050, mono=True)
-        
         if len(y) == 0:
-            st.error("Il file audio sembra essere vuoto o corrotto")
+            st.error("Il file audio è vuoto o corrotto.")
             return None
-            
+        
         n_fft = 2048
         hop_length = 512
         stft = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
@@ -204,10 +184,7 @@ def extract_audio_features(audio_file):
 
         for frame in range(0, magnitude.shape[1], step):
             frame_data = magnitude[:n_freq_bins, frame]
-            if np.max(frame_data) > 0:
-                frame_data = frame_data / np.max(frame_data)
-            else:
-                frame_data = np.zeros(n_freq_bins)
+            frame_data = frame_data / (np.max(frame_data) + 1e-8)  # Evita divisione per zero
             spectral_features.append(frame_data)
         
         try:
@@ -215,230 +192,176 @@ def extract_audio_features(audio_file):
             if len(onset_frames) > 1:
                 onset_times = librosa.frames_to_time(onset_frames, sr=sr)
                 intervals = np.diff(onset_times)
-                if len(intervals) > 0:
-                    avg_interval = np.median(intervals)
-                    tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
-                else:
-                    tempo = 120.0
+                avg_interval = np.median(intervals) if len(intervals) > 0 else 1.0
+                tempo = 60.0 / avg_interval if avg_interval > 0 else 120.0
             else:
                 tempo = 120.0
-            beats = onset_frames
-        except Exception:
+        except:
             tempo = 120.0
-            beats = np.array([])
         
         return {
             'spectral_features': spectral_features,
             'tempo': float(tempo),
-            'beats': beats,
             'duration': len(y) / sr,
             'sample_rate': sr
         }
     except Exception as e:
-        st.error(f"Errore nell'estrazione delle features audio: {str(e)}")
-        st.info("Suggerimento: prova con un file WAV o MP3 più piccolo")
+        st.error(f"Errore nell'analisi audio: {str(e)}")
         return None
 
+# --- Generazione video MP4 con imageio + ffmpeg ---
 def create_video_from_patterns(audio_features, pattern_type, fps=30, duration_seconds=15):
-    """Genera un video MP4 dai pattern"""
     generator = PatternGenerator(audio_features)
     total_frames = len(audio_features['spectral_features'])
     
     target_frames = int(fps * duration_seconds)
     frame_indices = np.linspace(0, total_frames - 1, target_frames, dtype=int)
     
-    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    video_path = temp_video.name
-    temp_video.close()
-    
-    try:
-        if OPENCV_AVAILABLE:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(video_path, fourcc, fps, (400, 300))
-            
-            for idx in frame_indices:
-                if pattern_type == "Blocchi Glitch":
-                    pattern = generator.pattern_1_glitch_blocks(idx, width=400, height=300)
-                elif pattern_type == "Strisce Orizzontali":
-                    pattern = generator.pattern_2_horizontal_stripes_glitch(idx, width=400, height=300)
-                else:
-                    pattern = generator.pattern_3_curved_flowing_lines(idx, width=400, height=300)
-                
-                frame = (pattern * 255).astype(np.uint8)
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                out.write(frame)
-            
-            out.release()
-        else:
-            writer = imageio.get_writer(video_path, fps=fps, format='FFMPEG', mode='I', codec='libx264')
-            for idx in frame_indices:
-                if pattern_type == "Blocchi Glitch":
-                    pattern = generator.pattern_1_glitch_blocks(idx, width=400, height=300)
-                elif pattern_type == "Strisce Orizzontali":
-                    pattern = generator.pattern_2_horizontal_stripes_glitch(idx, width=400, height=300)
-                else:
-                    pattern = generator.pattern_3_curved_flowing_lines(idx, width=400, height=300)
-                
-                frame = (pattern * 255).astype(np.uint8)
-                writer.append_data(frame)
-            writer.close()
-        
-        return video_path
-    except Exception as e:
-        st.error(f"Errore nella creazione del video: {e}")
-        if os.path.exists(video_path):
-            os.unlink(video_path)
-        return None
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    video_path = temp_file.name
+    temp_file.close()
 
-# --- INTERFACCIA STREAMLIT ---
-uploaded_file = st.file_uploader(
-    "Carica un file audio (MP3, WAV, M4A)", 
-    type=['mp3', 'wav', 'm4a', 'flac']
-)
+    st.info(f"🎥 Inizio generazione video: {video_path}")
+    st.info(f"📊 {target_frames} frame a {fps} FPS")
+
+    try:
+        writer = imageio.get_writer(
+            video_path,
+            fps=fps,
+            format='FFMPEG',
+            mode='I',
+            codec='libx264',
+            pixelformat='yuv420p',
+            output_params=['-crf', '23']  # Qualità buona
+        )
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        for i, idx in enumerate(frame_indices):
+            status_text.text(f"Rendering frame {i+1}/{target_frames}")
+            progress_bar.progress((i + 1) / target_frames)
+
+            if pattern_type == "Blocchi Glitch":
+                pattern = generator.pattern_1_glitch_blocks(idx, width=400, height=300)
+            elif pattern_type == "Strisce Orizzontali":
+                pattern = generator.pattern_2_horizontal_stripes_glitch(idx, width=400, height=300)
+            else:
+                pattern = generator.pattern_3_curved_flowing_lines(idx, width=400, height=300)
+            
+            frame = (pattern * 255).astype(np.uint8)
+            writer.append_data(frame)
+
+        writer.close()
+        st.success("✅ Video creato con successo!")
+
+        if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+            file_size = os.path.getsize(video_path)
+            st.info(f"💾 Dimensione file: {file_size:,} byte")
+            return video_path
+        else:
+            st.error("❌ Il file video è vuoto o non esiste.")
+            
+    except Exception as e:
+        st.error("❌ Errore durante la creazione del video")
+        st.code(f"Errore: {str(e)}")
+        import traceback
+        st.text("Traceback:")
+        st.code(traceback.format_exc())
+        
+        if os.path.exists(video_path):
+            try:
+                os.unlink(video_path)
+            except:
+                pass
+    
+    return None
+
+# --- Interfaccia Streamlit ---
+uploaded_file = st.file_uploader("Carica un file audio (MP3, WAV, M4A)", type=['mp3', 'wav', 'm4a', 'flac'])
 
 if uploaded_file is not None:
     try:
         with open("temp_audio.wav", "wb") as f:
             f.write(uploaded_file.getbuffer())
-        st.success("File audio caricato con successo!")
+        st.success("✅ Audio caricato!")
         
-        with st.spinner("Analizzando l'audio..."):
+        with st.spinner("🎧 Analisi in corso..."):
             audio_features = extract_audio_features("temp_audio.wav")
             
     except Exception as e:
-        st.error(f"Errore nel caricamento del file: {str(e)}")
+        st.error(f"Errore nel caricamento: {str(e)}")
         audio_features = None
     
     if audio_features is not None:
-        st.success("Analisi audio completata!")
+        st.success("✅ Analisi completata!")
         
         col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Durata", f"{audio_features['duration']:.2f}s")
-        with col2:
-            tempo_val = float(audio_features['tempo']) if audio_features['tempo'] is not None else 0.0
-            st.metric("Tempo", f"{tempo_val:.1f} BPM")
-        with col3:
-            st.metric("Sample Rate", f"{audio_features['sample_rate']} Hz")
+        with col1: st.metric("Durata", f"{audio_features['duration']:.1f}s")
+        with col2: st.metric("Tempo", f"{audio_features['tempo']:.1f} BPM")
+        with col3: st.metric("Sample Rate", f"{audio_features['sample_rate']} Hz")
         
         pattern_type = st.selectbox(
-            "Seleziona il tipo di pattern:",
+            "Tipo di pattern",
             ["Blocchi Glitch", "Strisce Orizzontali", "Linee Curve Fluide"]
         )
         
         if st.button("🎨 Genera Visualizzazione"):
-            with st.spinner("Generando i pattern visuali..."):
-                generator = PatternGenerator(audio_features)
+            generator = PatternGenerator(audio_features)
+            
+            st.subheader("🖼️ Anteprima")
+            cols = st.columns(3)
+            for i, col in enumerate(cols):
+                frame_idx = i * len(audio_features['spectral_features']) // 3
+                if pattern_type == "Blocchi Glitch":
+                    pattern = generator.pattern_1_glitch_blocks(frame_idx)
+                elif pattern_type == "Strisce Orizzontali":
+                    pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx)
+                else:
+                    pattern = generator.pattern_3_curved_flowing_lines(frame_idx)
                 
-                st.subheader("Anteprima Pattern Generati")
-                cols = st.columns(3)
-                for i, col in enumerate(cols):
-                    with col:
-                        frame_idx = i * len(audio_features['spectral_features']) // 3
-                        if pattern_type == "Blocchi Glitch":
-                            pattern = generator.pattern_1_glitch_blocks(frame_idx)
-                        elif pattern_type == "Strisce Orizzontali":
-                            pattern = generator.pattern_2_horizontal_stripes_glitch(frame_idx)
-                        else:
-                            pattern = generator.pattern_3_curved_flowing_lines(frame_idx)
-                        
-                        fig, ax = plt.subplots(figsize=(6, 4))
-                        ax.imshow(pattern, aspect='auto')
-                        ax.axis('off')
-                        ax.set_title(f"Frame {frame_idx}")
-                        st.pyplot(fig)
-                        plt.close()
-                
-                st.subheader("Esplora i Pattern nel Tempo")
-                frame_slider = st.slider(
-                    "Frame", 
-                    0, 
-                    len(audio_features['spectral_features']) - 1, 
-                    0
+                fig, ax = plt.subplots(figsize=(5, 3))
+                ax.imshow(pattern)
+                ax.axis('off')
+                ax.set_title(f"Frame {frame_idx}")
+                col.pyplot(fig)
+                plt.close()
+            
+            st.subheader("🎬 Genera Video MP4")
+            duration = st.slider("Durata (s)", 5, 30, 10)
+            fps = st.selectbox("FPS", [15, 24, 30], index=1)
+            
+            if st.button("🎥 Crea Video", key="gen_video"):
+                video_path = create_video_from_patterns(
+                    audio_features,
+                    pattern_type,
+                    fps=fps,
+                    duration_seconds=duration
                 )
                 
-                if pattern_type == "Blocchi Glitch":
-                    pattern = generator.pattern_1_glitch_blocks(frame_slider)
-                elif pattern_type == "Strisce Orizzontali":
-                    pattern = generator.pattern_2_horizontal_stripes_glitch(frame_slider)
+                if video_path and os.path.exists(video_path):
+                    with open(video_path, 'rb') as f:
+                        video_bytes = f.read()
+                    st.success("🎉 Video pronto per il download!")
+                    st.download_button(
+                        label="📥 Scarica Video MP4",
+                        data=video_bytes,
+                        file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
+                        mime="video/mp4"
+                    )
                 else:
-                    pattern = generator.pattern_3_curved_flowing_lines(frame_slider)
-                
-                fig, ax = plt.subplots(figsize=(12, 8))
-                ax.imshow(pattern, aspect='auto')
-                ax.axis('off')
-                ax.set_title(f"Pattern Frame {frame_slider} - {pattern_type}", fontsize=16)
-                st.pyplot(fig)
-                plt.close()
-                
-                # --- GENERA VIDEO ---
-                st.subheader("🎬 Genera Video Animato")
-                video_duration = st.slider("Durata video (secondi)", min_value=5, max_value=30, value=15)
-                video_fps = st.selectbox("FPS Video", [24, 30, 60], index=1)
-                
-                if st.button("🎬 Genera Video MP4", key="video_btn"):
-                    with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
-                        video_path = create_video_from_patterns(
-                            audio_features, 
-                            pattern_type, 
-                            fps=video_fps, 
-                            duration_seconds=video_duration
-                        )
-                        
-                        if video_path and os.path.exists(video_path):
-                            file_size = os.path.getsize(video_path)
-                            if file_size > 0:
-                                st.success("✅ Video generato con successo!")
-                                with open(video_path, 'rb') as video_file:
-                                    video_bytes = video_file.read()
-                                
-                                try:
-                                    st.video(video_bytes)
-                                except Exception:
-                                    st.info("Anteprima video non disponibile, ma puoi scaricarlo.")
-                                
-                                st.download_button(
-                                    label="📥 Scarica Video MP4",
-                                    data=video_bytes,
-                                    file_name=f"pattern_{pattern_type.replace(' ', '_')}_{int(time.time())}.mp4",
-                                    mime="video/mp4"
-                                )
-                            else:
-                                st.error("Il file video è vuoto")
-                        else:
-                            st.error("Impossibile creare il file video")
-        
-        with st.expander("ℹ️ Come Funziona"):
-            st.markdown("""
-            **Pattern Generati:**
-            - **Blocchi Glitch**: Blocchi colorati con effetti glitch
-            - **Strisce Orizzontali**: Strisce sottili con distorsioni
-            - **Linee Curve Fluide**: Curve animate fluide
-            - Colori casuali ogni volta
-            - Sincronizzazione con le frequenze
-            - Esportazione in video MP4
-            """)
+                    st.error("❌ Generazione video fallita.")
 
-# Sidebar
+# --- Sidebar ---
 with st.sidebar:
-    st.markdown("### 🎵 Audio Visual Generator")
+    st.markdown("### 🎵 Pattern Generator")
     st.markdown("""
-    Questa app analizza i brani musicali e genera pattern astratti 
-    sincronizzati con le frequenze audio.
+    Crea animazioni astratte sincronizzate con la musica.
     
-    **Features:**
-    - 3 tipi di pattern differenti
-    - Colori sempre casuali
-    - Effetti dinamici
-    - Esportazione in video MP4
-    """)
-    
-    st.markdown("### 🚀 Deploy su Streamlit")
-    st.markdown("""
-    1. Carica su GitHub
-    2. Aggiungi `requirements.txt`
-    3. Connetti a Streamlit Cloud
+    - 3 stili diversi
+    - Colori casuali
+    - Esporta in MP4
     """)
 
 st.markdown("---")
-st.markdown("💡 *I pattern sono generati in tempo reale e sono sempre unici!*")
+st.markdown("💡 *Ogni pattern è unico!*")
