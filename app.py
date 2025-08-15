@@ -28,7 +28,12 @@ st.markdown("Carica un brano musicale e guarda i pattern astratti generati dalle
 class PatternGenerator:
     def __init__(self, audio_features, user_params):
         self.audio_features = audio_features
-        self.colors = user_params.get("colors", self.generate_random_colors())
+        # Assicura che self.colors sia sempre una lista
+        if user_params.get("colors") is None:
+            self.colors = self.generate_random_colors()
+        else:
+            self.colors = user_params.get("colors")
+            
         self.background_color = user_params.get("background_color", (0, 0, 0))
         self.master_intensity = user_params.get("master_intensity", 1.0)
         self.glitch_effect = user_params.get("glitch_effect", 0.5)
@@ -227,7 +232,7 @@ class PatternGenerator:
         # Calcola l'intensità media per il frame corrente
         intensity = self.get_intensity(frame_idx)
         
-        # Effetto glitch
+        # Effetto glitch (in questo caso sposta leggermente le barre)
         glitch_shift = 0
         if random.random() < self.glitch_effect:
             glitch_shift = random.randint(-5, 5)
@@ -235,11 +240,13 @@ class PatternGenerator:
         # Disegna le barre colorate
         bar_height = height // 8
         num_colors_to_show = len(self.colors)
+        
+        # Sposta la posizione orizzontale delle barre in base all'effetto glitch
         bar_width = width // num_colors_to_show
         
         for i in range(num_colors_to_show):
             color = self.colors[i]
-            x0 = i * bar_width
+            x0 = i * bar_width + glitch_shift
             y0 = height - bar_height
             x1 = x0 + bar_width
             y1 = height
