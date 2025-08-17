@@ -34,6 +34,38 @@ class PatternGenerator:
         self.glitch_effect = user_params.get("glitch_effect", 0.5)
         self.thickness = user_params.get("thickness", 0.5)
         
+        # Calcola il volume RMS per ogni frame per una migliore sincronizzazione
+        self.volume_levels = self._calculate_volume_levels()
+        
+    def _calculate_volume_levels(self):
+        """Calcola i livelli di volume RMS per ogni frame per una migliore sincronizzazione"""
+        try:
+            y, sr = librosa.load(self.audio_features['audio_path'], sr=None, mono=True)
+            hop_length = 512
+            frame_length = 2048
+            
+            # Calcola RMS per ogni frame
+            rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+            
+            # Normalizza i valori RMS
+            if np.max(rms) > 0:
+                rms = rms / np.max(rms)
+            
+            # Ridimensiona per adattarsi al numero di frame spettrali
+            target_length = len(self.audio_features['spectral_features'])
+            if len(rms) != target_length:
+                # Interpola per adattare la lunghezza
+                from scipy.interpolate import interp1d
+                old_indices = np.linspace(0, 1, len(rms))
+                new_indices = np.linspace(0, 1, target_length)
+                f = interp1d(old_indices, rms, kind='linear', fill_value='extrapolate')
+                rms = f(new_indices)
+            
+            return rms
+        except Exception as e:
+            # Fallback: usa la media spettrale
+            return np.array([np.mean(frame) for frame in self.audio_features['spectral_features']])
+        
     def generate_random_colors(self):
         """Genera una palette di colori casuali ogni volta"""
         base_hue = random.random()
@@ -47,13 +79,31 @@ class PatternGenerator:
         return colors
     
     def get_intensity(self, frame_idx, base_intensity=1.0):
-        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
-        # Usa la media per una reattività più fluida
-        average_intensity = np.mean(freq_data) * base_intensity * self.master_intensity
-        return average_intensity
+        """Migliorata sincronizzazione audio-video usando RMS e dati spettrali"""
+        frame_idx = frame_idx % len(self.audio_features['spectral_features'])
+        
+        # Combina RMS (volume generale) e dati spettrali (frequenze)
+        volume_intensity = self.volume_levels[frame_idx]
+        freq_data = self.audio_features['spectral_features'][frame_idx]
+        spectral_intensity = np.mean(freq_data)
+        
+        # Peso maggiore al volume RMS per una migliore reattività
+        combined_intensity = (volume_intensity * 0.7 + spectral_intensity * 0.3) * base_intensity * self.master_intensity
+        
+        # Aggiungi un po' di smoothing per evitare cambi troppo bruschi
+        if frame_idx > 0:
+            prev_frame = (frame_idx - 1) % len(self.audio_features['spectral_features'])
+            prev_volume = self.volume_levels[prev_frame]
+            prev_spectral = np.mean(self.audio_features['spectral_features'][prev_frame])
+            prev_combined = (prev_volume * 0.7 + prev_spectral * 0.3) * base_intensity * self.master_intensity
+            
+            # Leggero smoothing
+            combined_intensity = combined_intensity * 0.8 + prev_combined * 0.2
+        
+        return combined_intensity
 
     def pattern_1_glitch_blocks(self, frame_idx, width, height):
-        """Pattern 1: Blocchi colorati glitch come nella prima immagine"""
+        """Pattern 1: Blocchi colorati glitch - con migliore sincronizzazione"""
         pattern = np.zeros((height, width, 3))
         
         # Imposta lo sfondo
@@ -61,10 +111,17 @@ class PatternGenerator:
         pattern[:, :, 1] = self.background_color[1]
         pattern[:, :, 2] = self.background_color[2]
         
-        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
+        frame_idx = frame_idx % len(self.audio_features['spectral_features'])
+        freq_data = self.audio_features['spectral_features'][frame_idx]
+        volume_level = self.volume_levels[frame_idx]
         
-        num_blocks_x = int(15 + 25 * self.thickness)
-        num_blocks_y = int(10 + 15 * self.thickness)
+        # Adatta il numero di blocchi al volume
+        base_blocks_x = int(15 + 25 * self.thickness)
+        base_blocks_y = int(10 + 15 * self.thickness)
+        
+        # Riduci i blocchi se il volume è basso
+        num_blocks_x = max(5, int(base_blocks_x * (0.3 + volume_level * 0.7)))
+        num_blocks_y = max(3, int(base_blocks_y * (0.3 + volume_level * 0.7)))
         
         block_width = width // num_blocks_x
         block_height = height // num_blocks_y
@@ -72,18 +129,26 @@ class PatternGenerator:
         for i in range(num_blocks_x):
             for j in range(num_blocks_y):
                 freq_idx = (i + j) % len(freq_data)
-                intensity = freq_data[freq_idx]
+                intensity = freq_data[freq_idx] * volume_level  # Combina frequenza e volume
                 
-                # Sincronizzazione con il volume: blocchi meno visibili con audio basso
-                if intensity < 0.1 and random.random() > (1 - self.glitch_effect):
+                # Sincronizzazione migliorata: blocchi molto meno visibili con audio basso
+                if volume_level < 0.1 and random.random() > 0.3:
+                    continue
+                if intensity < 0.05 and random.random() > (1 - self.glitch_effect * volume_level):
                     continue
                 
-                actual_width = int(block_width * (0.5 + intensity * 0.5))
-                actual_height = int(block_height * (0.5 + intensity * 0.5))
+                # La dimensione dei blocchi dipende sia dall'intensità che dal volume
+                size_factor = intensity * volume_level
+                actual_width = int(block_width * (0.2 + size_factor * 0.8))
+                actual_height = int(block_height * (0.2 + size_factor * 0.8))
                 
-                # Effetto glitch controllato
-                x_offset = random.randint(-5, 5) if intensity > 0.7 * self.glitch_effect else 0
-                y_offset = random.randint(-3, 3) if intensity > 0.6 * self.glitch_effect else 0
+                # Effetto glitch proporzionale al volume
+                glitch_threshold = 0.7 * volume_level
+                if intensity > glitch_threshold and random.random() < self.glitch_effect * volume_level:
+                    x_offset = random.randint(-int(8 * volume_level), int(8 * volume_level))
+                    y_offset = random.randint(-int(5 * volume_level), int(5 * volume_level))
+                else:
+                    x_offset = y_offset = 0
                 
                 x_start = max(0, i * block_width + x_offset)
                 y_start = max(0, j * block_height + y_offset)
@@ -93,7 +158,8 @@ class PatternGenerator:
                 color_idx = int((intensity + i/num_blocks_x + j/num_blocks_y) * len(self.colors)) % len(self.colors)
                 color = self.colors[color_idx]
                 
-                brightness = 0.4 + intensity * 0.6 * self.master_intensity
+                # Luminosità basata su intensità e volume
+                brightness = 0.2 + (intensity * volume_level) * 0.8 * self.master_intensity
                 final_color = [c * brightness for c in color]
                 
                 if x_start < x_end and y_start < y_end:
@@ -102,7 +168,7 @@ class PatternGenerator:
         return pattern
     
     def pattern_2_horizontal_stripes_glitch(self, frame_idx, width, height):
-        """Pattern 2: Strisce orizzontali con glitch digitale"""
+        """Pattern 2: Strisce orizzontali con glitch digitale - con migliore sincronizzazione"""
         pattern = np.zeros((height, width, 3))
         
         # Imposta lo sfondo
@@ -110,41 +176,54 @@ class PatternGenerator:
         pattern[:, :, 1] = self.background_color[1]
         pattern[:, :, 2] = self.background_color[2]
         
-        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
+        frame_idx = frame_idx % len(self.audio_features['spectral_features'])
+        freq_data = self.audio_features['spectral_features'][frame_idx]
+        volume_level = self.volume_levels[frame_idx]
         
-        stripe_height = int(max(1, 4 * self.thickness))
+        # Adatta lo spessore delle strisce al volume
+        base_stripe_height = int(max(1, 4 * self.thickness))
+        stripe_height = max(1, int(base_stripe_height * (0.5 + volume_level * 0.5)))
         
         y = 0
         stripe_idx = 0
         
         while y < height:
             freq_idx = stripe_idx % len(freq_data)
-            intensity = freq_data[freq_idx]
+            intensity = freq_data[freq_idx] * volume_level  # Combina frequenza e volume
+            
+            # Salta le strisce se il volume è troppo basso
+            if volume_level < 0.1 and random.random() > 0.4:
+                y += stripe_height
+                stripe_idx += 1
+                continue
             
             current_stripe_height = stripe_height
-            if intensity > 0.8 * self.master_intensity:
-                current_stripe_height = random.randint(1, 8)
+            if intensity * volume_level > 0.8 * self.master_intensity:
+                current_stripe_height = random.randint(1, int(8 * volume_level))
             
-            if intensity > 0.5 * self.master_intensity:
+            # Larghezza delle strisce basata su intensità e volume
+            if intensity * volume_level > 0.5 * self.master_intensity:
                 stripe_width = width
                 x_start = 0
             else:
-                stripe_width = int(width * (0.3 + intensity * 0.7))
+                min_width_factor = 0.1 + volume_level * 0.2
+                stripe_width = int(width * (min_width_factor + intensity * volume_level * 0.7))
                 x_start = random.randint(0, max(1, width - stripe_width))
             
-            # Effetto glitch controllato
-            if intensity > 0.7 and random.random() < self.glitch_effect:
-                x_offset = random.randint(-20, 20)
+            # Effetto glitch proporzionale al volume
+            if intensity > 0.7 and random.random() < self.glitch_effect * volume_level:
+                x_offset = random.randint(-int(20 * volume_level), int(20 * volume_level))
                 x_start = max(0, min(width - stripe_width, x_start + x_offset))
             
             color_idx = int((stripe_idx * 0.1 + intensity) * len(self.colors)) % len(self.colors)
             base_color = self.colors[color_idx]
             
             color = list(base_color)
-            if intensity > 0.6 and random.random() < self.glitch_effect:
+            if intensity > 0.6 and random.random() < self.glitch_effect * volume_level:
                 color[random.randint(0, 2)] = random.random()
             
-            brightness = 0.3 + intensity * 0.7 * self.master_intensity
+            # Luminosità basata su intensità e volume
+            brightness = 0.1 + (intensity * volume_level) * 0.9 * self.master_intensity
             final_color = [c * brightness for c in color]
             
             y_end = min(height, y + current_stripe_height)
@@ -159,7 +238,7 @@ class PatternGenerator:
         return pattern
     
     def pattern_3_curved_flowing_lines(self, frame_idx, width, height):
-        """Pattern 3: Linee curve fluide"""
+        """Pattern 3: Linee curve fluide - con migliore sincronizzazione"""
         pattern = np.zeros((height, width, 3))
         
         # Imposta lo sfondo
@@ -167,33 +246,42 @@ class PatternGenerator:
         pattern[:, :, 1] = self.background_color[1]
         pattern[:, :, 2] = self.background_color[2]
         
-        freq_data = self.audio_features['spectral_features'][frame_idx % len(self.audio_features['spectral_features'])]
+        frame_idx = frame_idx % len(self.audio_features['spectral_features'])
+        freq_data = self.audio_features['spectral_features'][frame_idx]
+        volume_level = self.volume_levels[frame_idx]
         
-        num_curves = int(8 + np.mean(freq_data) * 15)
+        # Numero di curve basato su intensità spettrale e volume
+        base_curves = int(8 + np.mean(freq_data) * 15)
+        num_curves = max(2, int(base_curves * (0.3 + volume_level * 0.7)))
         
         y_coords, x_coords = np.mgrid[0:height, 0:width]
         
         for curve_idx in range(num_curves):
             freq_idx = curve_idx % len(freq_data)
-            intensity = freq_data[freq_idx]
+            intensity = freq_data[freq_idx] * volume_level  # Combina frequenza e volume
             
-            if intensity < 0.2 * self.master_intensity:
+            # Salta le curve se il volume è troppo basso
+            if volume_level < 0.1 and random.random() > 0.3:
+                continue
+            if intensity < 0.1 * self.master_intensity:
                 continue
             
-            amplitude = height * 0.3 * intensity * self.master_intensity
-            frequency = (curve_idx + 1) * 0.02
-            phase = frame_idx * 0.1 + curve_idx * 0.5 * self.glitch_effect
+            # Ampiezza delle curve basata su intensità e volume
+            amplitude = height * 0.3 * intensity * volume_level * self.master_intensity
+            frequency = (curve_idx + 1) * 0.02 * (1 + volume_level * 0.5)
+            phase = frame_idx * 0.1 * volume_level + curve_idx * 0.5 * self.glitch_effect
             
             center_y = height * (curve_idx / num_curves)
             
             curve_y = center_y + amplitude * np.sin(x_coords * frequency + phase)
             
-            line_thickness = max(1, int(5 * intensity * self.thickness))
+            # Spessore delle linee basato su intensità e volume
+            line_thickness = max(1, int(5 * intensity * volume_level * self.thickness))
             
             color_idx = curve_idx % len(self.colors)
             base_color = self.colors[color_idx]
             
-            color_variation = 0.8 + intensity * 0.4 * self.glitch_effect
+            color_variation = 0.5 + (intensity * volume_level) * 0.5 * self.glitch_effect
             final_color = [c * color_variation for c in base_color]
             
             for x in range(width):
@@ -204,13 +292,14 @@ class PatternGenerator:
                     
                     if 0 <= y_pos < height:
                         alpha = 1.0 - abs(thickness) / (line_thickness/2 + 1)
-                        alpha *= intensity
+                        alpha *= intensity * volume_level
                         
                         for c in range(3):
                             pattern[y_pos, x, c] = max(pattern[y_pos, x, c], 
                                                      final_color[c] * alpha)
         
-        if frame_idx > 0:
+        # Applica smoothing solo se c'è abbastanza attività
+        if frame_idx > 0 and volume_level > 0.2:
             for c in range(3):
                 pattern[:, :, c] = gaussian_filter1d(pattern[:, :, c], 
                                                    sigma=0.5, axis=1)
@@ -393,7 +482,7 @@ if uploaded_file is not None:
             
         # Titolo video
         st.markdown("---")
-        st.subheader("✍️ Aggiungi un Titolo")
+        st.subheader("✏️ Aggiungi un Titolo")
         video_title = st.text_input("Inserisci il titolo del video (lascia vuoto per non aggiungerlo)", "")
         
         if video_title:
@@ -441,13 +530,16 @@ if uploaded_file is not None:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
-                    # Preparazione font per il titolo
+                    # Preparazione font per il titolo e la firma
                     if video_title:
                         try:
-                            # Prova a caricare un font comune, altrimenti usa il default
-                            font = ImageFont.truetype("arial.ttf", 40)
+                            # Font per il titolo principale
+                            title_font = ImageFont.truetype("arial.ttf", 40)
+                            # Font più piccolo per la firma
+                            signature_font = ImageFont.truetype("arial.ttf", 24)
                         except IOError:
-                            font = ImageFont.load_default()
+                            title_font = ImageFont.load_default()
+                            signature_font = ImageFont.load_default()
                             
                     for frame_idx in range(total_frames):
                         if pattern_type == "Blocchi Glitch":
@@ -457,33 +549,52 @@ if uploaded_file is not None:
                         else:
                             pattern = generator.pattern_3_curved_flowing_lines(frame_idx, width, height)
                         
-                        # Converte in uint8 e aggiungi il titolo
+                        # Converte in uint8 e aggiungi il titolo con firma
                         frame_rgb = (pattern * 255).astype(np.uint8)
                         pil_img = Image.fromarray(frame_rgb)
                         
                         if video_title:
                             draw = ImageDraw.Draw(pil_img)
-                            # Calcola la posizione del testo
-                            bbox = draw.textbbox((0, 0), video_title, font=font)
-                            text_w = bbox[2] - bbox[0]
-                            text_h = bbox[3] - bbox[1]
+                            
+                            # Calcola la posizione del titolo principale
+                            title_bbox = draw.textbbox((0, 0), video_title, font=title_font)
+                            title_w = title_bbox[2] - title_bbox[0]
+                            title_h = title_bbox[3] - title_bbox[1]
+                            
+                            # Calcola la posizione della firma
+                            signature_text = "by loop507"
+                            sig_bbox = draw.textbbox((0, 0), signature_text, font=signature_font)
+                            sig_w = sig_bbox[2] - sig_bbox[0]
+                            sig_h = sig_bbox[3] - sig_bbox[1]
                             
                             padding = 20
-                            x, y = 0, 0
+                            title_x, title_y = 0, 0
+                            sig_x, sig_y = 0, 0
 
                             if title_position_v == "In Alto":
-                                y = padding
+                                title_y = padding
+                                sig_y = title_y + title_h + 5  # 5px sotto il titolo
                             elif title_position_v == "In Basso":
-                                y = height - text_h - padding
+                                sig_y = height - padding - sig_h
+                                title_y = sig_y - title_h - 5  # 5px sopra la firma
                             
                             if title_position_h == "A Sinistra":
-                                x = padding
+                                title_x = padding
+                                sig_x = padding
                             elif title_position_h == "A Destra":
-                                x = width - text_w - padding
+                                title_x = width - title_w - padding
+                                sig_x = width - sig_w - padding
                             else: # Centrato orizzontalmente di default
-                                x = (width - text_w) / 2
+                                title_x = (width - title_w) / 2
+                                sig_x = (width - sig_w) / 2
                             
-                            draw.text((x, y), video_title, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+                            # Disegna il titolo principale
+                            draw.text((title_x, title_y), video_title, font=title_font, 
+                                    fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+                            
+                            # Disegna la firma con caratteri più piccoli
+                            draw.text((sig_x, sig_y), signature_text, font=signature_font, 
+                                    fill=(200, 200, 200), stroke_width=1, stroke_fill=(0, 0, 0))
                         
                         writer.append_data(np.array(pil_img))
                         
