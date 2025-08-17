@@ -22,7 +22,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🎵 Audio Visual Pattern Generator")
+st.title("🎵 Audio Visual Pattern Generator by loop507")
 st.markdown("Carica un brano musicale e guarda i pattern astratti generati dalle frequenze!")
 
 class PatternGenerator:
@@ -530,16 +530,13 @@ if uploaded_file is not None:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
-                    # Preparazione font per il titolo e la firma
+                    # Preparazione font per il titolo
                     if video_title:
                         try:
-                            # Font per il titolo principale
+                            # Font per il titolo del video
                             title_font = ImageFont.truetype("arial.ttf", 40)
-                            # Font più piccolo per la firma
-                            signature_font = ImageFont.truetype("arial.ttf", 24)
                         except IOError:
                             title_font = ImageFont.load_default()
-                            signature_font = ImageFont.load_default()
                             
                     for frame_idx in range(total_frames):
                         if pattern_type == "Blocchi Glitch":
@@ -561,40 +558,24 @@ if uploaded_file is not None:
                             title_w = title_bbox[2] - title_bbox[0]
                             title_h = title_bbox[3] - title_bbox[1]
                             
-                            # Calcola la posizione della firma
-                            signature_text = "by loop507"
-                            sig_bbox = draw.textbbox((0, 0), signature_text, font=signature_font)
-                            sig_w = sig_bbox[2] - sig_bbox[0]
-                            sig_h = sig_bbox[3] - sig_bbox[1]
-                            
                             padding = 20
                             title_x, title_y = 0, 0
-                            sig_x, sig_y = 0, 0
 
                             if title_position_v == "In Alto":
                                 title_y = padding
-                                sig_y = title_y + title_h + 5  # 5px sotto il titolo
                             elif title_position_v == "In Basso":
-                                sig_y = height - padding - sig_h
-                                title_y = sig_y - title_h - 5  # 5px sopra la firma
+                                title_y = height - title_h - padding
                             
                             if title_position_h == "A Sinistra":
                                 title_x = padding
-                                sig_x = padding
                             elif title_position_h == "A Destra":
                                 title_x = width - title_w - padding
-                                sig_x = width - sig_w - padding
                             else: # Centrato orizzontalmente di default
                                 title_x = (width - title_w) / 2
-                                sig_x = (width - sig_w) / 2
                             
-                            # Disegna il titolo principale
+                            # Disegna solo il titolo del video
                             draw.text((title_x, title_y), video_title, font=title_font, 
                                     fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
-                            
-                            # Disegna la firma con caratteri più piccoli
-                            draw.text((sig_x, sig_y), signature_text, font=signature_font, 
-                                    fill=(200, 200, 200), stroke_width=1, stroke_fill=(0, 0, 0))
                         
                         writer.append_data(np.array(pil_img))
                         
