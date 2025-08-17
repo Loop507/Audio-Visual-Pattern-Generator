@@ -412,120 +412,123 @@ if uploaded_file is not None:
             title_position_h = None
 
         if st.button("🎬 Genera Video MP4"):
-            with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
-                try:
-                    # Imposta dimensioni in base all'aspect ratio
-                    if aspect_ratio == "1:1 (Square)":
-                        width, height = 1080, 1080
-                    elif aspect_ratio == "9:16 (Verticale)":
-                        width, height = 720, 1280
-                    else: # 16:9
-                        width, height = 1280, 720
-                    
-                    # Genera il video senza audio usando imageio
-                    video_no_audio_path = os.path.join(tempfile.gettempdir(), f"video_no_audio_{int(time.time())}.mp4")
-                    
-                    user_params = {
-                        "master_intensity": master_intensity,
-                        "glitch_effect": glitch_effect,
-                        "thickness": thickness,
-                        "colors": user_colors,
-                        "background_color": bg_color_rgb
-                    }
-                    generator = PatternGenerator(audio_features, user_params)
-                    total_frames = int(audio_features['duration'] * 30) # 30 FPS
-                    audio_frame_step = len(audio_features['spectral_features']) / total_frames
+            if audio_features is None:
+                st.error("Per favore, carica un file audio valido prima di generare il video.")
+            else:
+                with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
+                    try:
+                        # Imposta dimensioni in base all'aspect ratio
+                        if aspect_ratio == "1:1 (Square)":
+                            width, height = 1080, 1080
+                        elif aspect_ratio == "9:16 (Verticale)":
+                            width, height = 720, 1280
+                        else: # 16:9
+                            width, height = 1280, 720
+                        
+                        # Genera il video senza audio usando imageio
+                        video_no_audio_path = os.path.join(tempfile.gettempdir(), f"video_no_audio_{int(time.time())}.mp4")
+                        
+                        user_params = {
+                            "master_intensity": master_intensity,
+                            "glitch_effect": glitch_effect,
+                            "thickness": thickness,
+                            "colors": user_colors,
+                            "background_color": bg_color_rgb
+                        }
+                        generator = PatternGenerator(audio_features, user_params)
+                        total_frames = int(audio_features['duration'] * 30) # 30 FPS
+                        audio_frame_step = len(audio_features['spectral_features']) / total_frames
 
-                    writer = imageio.get_writer(video_no_audio_path, fps=30, codec='libx264', macro_block_size=1)
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    # Preparazione font per il titolo
-                    if video_title:
-                        try:
-                            # Prova a caricare un font comune, altrimenti usa il default
-                            font_title = ImageFont.truetype("arial.ttf", 60)
-                        except IOError:
-                            font_title = ImageFont.load_default()
-                            
-                    for frame_idx in range(total_frames):
-                        audio_idx = int(frame_idx * audio_frame_step)
-                        if pattern_type == "Blocchi Glitch":
-                            pattern = generator.pattern_1_glitch_blocks(audio_idx, width, height)
-                        elif pattern_type == "Strisce Orizzontali":
-                            pattern = generator.pattern_2_horizontal_stripes_glitch(audio_idx, width, height)
-                        else:
-                            pattern = generator.pattern_3_curved_flowing_lines(audio_idx, width, height)
+                        writer = imageio.get_writer(video_no_audio_path, fps=30, codec='libx264', macro_block_size=1)
                         
-                        # Converte in uint8 e aggiungi il titolo
-                        frame_rgb = (pattern * 255).astype(np.uint8)
-                        pil_img = Image.fromarray(frame_rgb)
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
                         
+                        # Preparazione font per il titolo
                         if video_title:
-                            draw = ImageDraw.Draw(pil_img)
+                            try:
+                                # Prova a caricare un font comune, altrimenti usa il default
+                                font_title = ImageFont.truetype("arial.ttf", 60)
+                            except IOError:
+                                font_title = ImageFont.load_default()
+                                
+                        for frame_idx in range(total_frames):
+                            audio_idx = int(frame_idx * audio_frame_step)
+                            if pattern_type == "Blocchi Glitch":
+                                pattern = generator.pattern_1_glitch_blocks(audio_idx, width, height)
+                            elif pattern_type == "Strisce Orizzontali":
+                                pattern = generator.pattern_2_horizontal_stripes_glitch(audio_idx, width, height)
+                            else:
+                                pattern = generator.pattern_3_curved_flowing_lines(audio_idx, width, height)
                             
-                            # Calcola la posizione del titolo principale
-                            bbox_title = draw.textbbox((0, 0), video_title, font=font_title)
-                            text_w = bbox_title[2] - bbox_title[0]
-                            text_h = bbox_title[3] - bbox_title[1]
+                            # Converte in uint8 e aggiungi il titolo
+                            frame_rgb = (pattern * 255).astype(np.uint8)
+                            pil_img = Image.fromarray(frame_rgb)
                             
-                            padding = 40
-                            x, y = 0, 0
+                            if video_title:
+                                draw = ImageDraw.Draw(pil_img)
+                                
+                                # Calcola la posizione del titolo principale
+                                bbox_title = draw.textbbox((0, 0), video_title, font=font_title)
+                                text_w = bbox_title[2] - bbox_title[0]
+                                text_h = bbox_title[3] - bbox_title[1]
+                                
+                                padding = 40
+                                x, y = 0, 0
 
-                            if title_position_v == "In Alto":
-                                y = padding
-                            elif title_position_v == "In Basso":
-                                y = height - text_h - padding
-                            
-                            if title_position_h == "A Sinistra":
-                                x = padding
-                            elif title_position_h == "A Destra":
-                                x = width - text_w - padding
-                            else: # Centrato orizzontalmente di default
-                                x = (width - text_w) / 2
-                            
-                            draw.text((x, y), video_title, font=font_title, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+                                if title_position_v == "In Alto":
+                                    y = padding
+                                elif title_position_v == "In Basso":
+                                    y = height - text_h - padding
+                                
+                                if title_position_h == "A Sinistra":
+                                    x = padding
+                                elif title_position_h == "A Destra":
+                                    x = width - text_w - padding
+                                else: # Centrato orizzontalmente di default
+                                    x = (width - text_w) / 2
+                                
+                                draw.text((x, y), video_title, font=font_title, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
 
-                        writer.append_data(np.array(pil_img))
+                            writer.append_data(np.array(pil_img))
+                            
+                            progress = (frame_idx + 1) / total_frames
+                            progress_bar.progress(progress)
+                            status_text.text(f"Creazione video in corso: {int(progress * 100)}%")
+                            
+                        writer.close()
                         
-                        progress = (frame_idx + 1) / total_frames
-                        progress_bar.progress(progress)
-                        status_text.text(f"Creazione video in corso: {int(progress * 100)}%")
+                        # Combina il video con l'audio usando FFmpeg
+                        final_video_path = os.path.join(tempfile.gettempdir(), f"final_video_{int(time.time())}.mp4")
                         
-                    writer.close()
-                    
-                    # Combina il video con l'audio usando FFmpeg
-                    final_video_path = os.path.join(tempfile.gettempdir(), f"final_video_{int(time.time())}.mp4")
-                    
-                    status_text.text("Combinando video e audio...")
-                    
-                    if create_video_with_audio(audio_features['audio_path'], video_no_audio_path, final_video_path):
+                        status_text.text("Combinando video e audio...")
+                        
+                        if create_video_with_audio(audio_features['audio_path'], video_no_audio_path, final_video_path):
+                            if os.path.exists(final_video_path):
+                                with open(final_video_path, 'rb') as video_file:
+                                    video_bytes = video_file.read()
+                                
+                                st.success("✅ Video generato con successo!")
+                                st.video(video_bytes)
+                                
+                                st.download_button(
+                                    label="📥 Scarica Video MP4",
+                                    data=video_bytes,
+                                    file_name=f"pattern_{pattern_type.replace(' ', '_')}.mp4",
+                                    mime="video/mp4"
+                                )
+                            else:
+                                st.error("Il file video finale non è stato creato.")
+                        
+                        # Pulisci i file temporanei
+                        os.remove(video_no_audio_path)
+                        os.remove(temp_audio_path)
                         if os.path.exists(final_video_path):
-                            with open(final_video_path, 'rb') as video_file:
-                                video_bytes = video_file.read()
+                            os.remove(final_video_path)
                             
-                            st.success("✅ Video generato con successo!")
-                            st.video(video_bytes)
-                            
-                            st.download_button(
-                                label="📥 Scarica Video MP4",
-                                data=video_bytes,
-                                file_name=f"pattern_{pattern_type.replace(' ', '_')}.mp4",
-                                mime="video/mp4"
-                            )
-                        else:
-                            st.error("Il file video finale non è stato creato.")
-                    
-                    # Pulisci i file temporanei
-                    os.remove(video_no_audio_path)
-                    os.remove(temp_audio_path)
-                    if os.path.exists(final_video_path):
-                        os.remove(final_video_path)
-                        
-                    progress_bar.empty()
-                    status_text.empty()
+                        progress_bar.empty()
+                        status_text.empty()
 
-                except Exception as e:
-                    st.error(f"Errore durante la generazione: {str(e)}")
-                    st.info("Prova a ricaricare l'app e riprovare con un file diverso.")
+                    except Exception as e:
+                        st.error(f"Errore durante la generazione: {str(e)}")
+                        st.info("Prova a ricaricare l'app e riprovare con un file diverso.")
