@@ -446,10 +446,8 @@ if uploaded_file is not None:
                         try:
                             # Prova a caricare un font comune, altrimenti usa il default
                             font_title = ImageFont.truetype("arial.ttf", 60)
-                            font_subtitle = ImageFont.truetype("arial.ttf", 30)
                         except IOError:
                             font_title = ImageFont.load_default()
-                            font_subtitle = ImageFont.load_default()
                             
                     for frame_idx in range(total_frames):
                         audio_idx = int(frame_idx * audio_frame_step)
@@ -488,17 +486,6 @@ if uploaded_file is not None:
                                 x = (width - text_w) / 2
                             
                             draw.text((x, y), video_title, font=font_title, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
-                            
-                            # Aggiungi il sottotitolo
-                            subtitle_text = "by loop507"
-                            bbox_subtitle = draw.textbbox((0, 0), subtitle_text, font=font_subtitle)
-                            subtitle_w = bbox_subtitle[2] - bbox_subtitle[0]
-                            
-                            # Posiziona il sottotitolo centrato sotto il titolo principale
-                            subtitle_x = x + (text_w - subtitle_w) / 2
-                            subtitle_y = y + text_h + 10 # 10 pixel di spazio
-                            
-                            draw.text((subtitle_x, subtitle_y), subtitle_text, font=font_subtitle, fill=(255, 255, 255), stroke_width=1, stroke_fill=(0, 0, 0))
 
                         writer.append_data(np.array(pil_img))
                         
