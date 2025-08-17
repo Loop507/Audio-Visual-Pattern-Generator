@@ -37,34 +37,61 @@ class PatternGenerator:
         # Calcola il volume RMS per ogni frame per una migliore sincronizzazione
         self.volume_levels = self._calculate_volume_levels()
         
+        # Verifica che tutti i dati necessari siano presenti
+        if self.volume_levels is None or len(self.volume_levels) == 0:
+            self.volume_levels = np.ones(len(self.audio_features['spectral_features']))
+        
     def _calculate_volume_levels(self):
         """Calcola i livelli di volume RMS per ogni frame per una migliore sincronizzazione"""
         try:
+            if not hasattr(self.audio_features, 'get') or 'audio_path' not in self.audio_features:
+                return None
+                
             y, sr = librosa.load(self.audio_features['audio_path'], sr=None, mono=True)
+            
+            if len(y) == 0:
+                return None
+                
             hop_length = 512
             frame_length = 2048
             
             # Calcola RMS per ogni frame
             rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
             
+            if len(rms) == 0:
+                return None
+            
             # Normalizza i valori RMS
             if np.max(rms) > 0:
                 rms = rms / np.max(rms)
             
             # Ridimensiona per adattarsi al numero di frame spettrali
+            if 'spectral_features' not in self.audio_features or len(self.audio_features['spectral_features']) == 0:
+                return None
+                
             target_length = len(self.audio_features['spectral_features'])
             if len(rms) != target_length:
                 # Interpola per adattare la lunghezza
-                from scipy.interpolate import interp1d
-                old_indices = np.linspace(0, 1, len(rms))
-                new_indices = np.linspace(0, 1, target_length)
-                f = interp1d(old_indices, rms, kind='linear', fill_value='extrapolate')
-                rms = f(new_indices)
+                try:
+                    from scipy.interpolate import interp1d
+                    old_indices = np.linspace(0, 1, len(rms))
+                    new_indices = np.linspace(0, 1, target_length)
+                    f = interp1d(old_indices, rms, kind='linear', fill_value='extrapolate')
+                    rms = f(new_indices)
+                except ImportError:
+                    # Fallback senza scipy
+                    rms = np.interp(np.linspace(0, len(rms)-1, target_length), 
+                                  np.arange(len(rms)), rms)
             
             return rms
         except Exception as e:
-            # Fallback: usa la media spettrale
-            return np.array([np.mean(frame) for frame in self.audio_features['spectral_features']])
+            # Fallback: usa la media spettrale se disponibile
+            try:
+                if 'spectral_features' in self.audio_features and self.audio_features['spectral_features']:
+                    return np.array([np.mean(frame) for frame in self.audio_features['spectral_features']])
+            except:
+                pass
+            return None
         
     def generate_random_colors(self):
         """Genera una palette di colori casuali ogni volta"""
@@ -80,12 +107,18 @@ class PatternGenerator:
     
     def get_intensity(self, frame_idx, base_intensity=1.0):
         """Migliorata sincronizzazione audio-video usando RMS e dati spettrali"""
+        if not self.audio_features or 'spectral_features' not in self.audio_features:
+            return base_intensity * self.master_intensity
+            
+        if len(self.audio_features['spectral_features']) == 0:
+            return base_intensity * self.master_intensity
+            
         frame_idx = frame_idx % len(self.audio_features['spectral_features'])
         
         # Combina RMS (volume generale) e dati spettrali (frequenze)
-        volume_intensity = self.volume_levels[frame_idx]
+        volume_intensity = self.volume_levels[frame_idx] if self.volume_levels is not None else 0.5
         freq_data = self.audio_features['spectral_features'][frame_idx]
-        spectral_intensity = np.mean(freq_data)
+        spectral_intensity = np.mean(freq_data) if len(freq_data) > 0 else 0.5
         
         # Peso maggiore al volume RMS per una migliore reattività
         combined_intensity = (volume_intensity * 0.7 + spectral_intensity * 0.3) * base_intensity * self.master_intensity
@@ -93,14 +126,15 @@ class PatternGenerator:
         # Aggiungi un po' di smoothing per evitare cambi troppo bruschi
         if frame_idx > 0:
             prev_frame = (frame_idx - 1) % len(self.audio_features['spectral_features'])
-            prev_volume = self.volume_levels[prev_frame]
-            prev_spectral = np.mean(self.audio_features['spectral_features'][prev_frame])
+            prev_volume = self.volume_levels[prev_frame] if self.volume_levels is not None else 0.5
+            prev_freq_data = self.audio_features['spectral_features'][prev_frame]
+            prev_spectral = np.mean(prev_freq_data) if len(prev_freq_data) > 0 else 0.5
             prev_combined = (prev_volume * 0.7 + prev_spectral * 0.3) * base_intensity * self.master_intensity
             
             # Leggero smoothing
             combined_intensity = combined_intensity * 0.8 + prev_combined * 0.2
         
-        return combined_intensity
+        return max(0.1, combined_intensity)  # Assicura un minimo di intensità
 
     def pattern_1_glitch_blocks(self, frame_idx, width, height):
         """Pattern 1: Blocchi colorati glitch - con migliore sincronizzazione"""
@@ -113,7 +147,7 @@ class PatternGenerator:
         
         frame_idx = frame_idx % len(self.audio_features['spectral_features'])
         freq_data = self.audio_features['spectral_features'][frame_idx]
-        volume_level = self.volume_levels[frame_idx]
+        volume_level = self.volume_levels[frame_idx] if self.volume_levels is not None else 0.5
         
         # Adatta il numero di blocchi al volume
         base_blocks_x = int(15 + 25 * self.thickness)
@@ -178,7 +212,7 @@ class PatternGenerator:
         
         frame_idx = frame_idx % len(self.audio_features['spectral_features'])
         freq_data = self.audio_features['spectral_features'][frame_idx]
-        volume_level = self.volume_levels[frame_idx]
+        volume_level = self.volume_levels[frame_idx] if self.volume_levels is not None else 0.5
         
         # Adatta lo spessore delle strisce al volume
         base_stripe_height = int(max(1, 4 * self.thickness))
@@ -248,7 +282,7 @@ class PatternGenerator:
         
         frame_idx = frame_idx % len(self.audio_features['spectral_features'])
         freq_data = self.audio_features['spectral_features'][frame_idx]
-        volume_level = self.volume_levels[frame_idx]
+        volume_level = self.volume_levels[frame_idx] if self.volume_levels is not None else 0.5
         
         # Numero di curve basato su intensità spettrale e volume
         base_curves = int(8 + np.mean(freq_data) * 15)
