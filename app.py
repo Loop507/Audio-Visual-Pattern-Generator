@@ -280,6 +280,20 @@ class PatternGenerator:
         pattern[:, :, 1] = self.background_color[1]
         pattern[:, :, 2] = self.background_color[2]
         
+    def pattern_3_curved_flowing_lines(self, frame_idx, width, height):
+        """Pattern 3: Linee curve fluide - con migliore sincronizzazione"""
+        pattern = np.zeros((height, width, 3))
+        
+        # Imposta lo sfondo
+        pattern[:, :, 0] = self.background_color[0]
+        pattern[:, :, 1] = self.background_color[1]
+        pattern[:, :, 2] = self.background_color[2]
+        
+        if not self.audio_features or 'spectral_features' not in self.audio_features:
+            return pattern
+        if len(self.audio_features['spectral_features']) == 0:
+            return pattern
+            
         frame_idx = frame_idx % len(self.audio_features['spectral_features'])
         freq_data = self.audio_features['spectral_features'][frame_idx]
         volume_level = self.volume_levels[frame_idx] if self.volume_levels is not None else 0.5
