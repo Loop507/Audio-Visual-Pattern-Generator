@@ -370,6 +370,14 @@ def generate_report_text(audio_features, pattern_type, aspect_ratio, user_params
 if 'user_colors' not in st.session_state:
     st.session_state.user_colors = []
     st.session_state.num_colors = 4
+if 'video_bytes' not in st.session_state:
+    st.session_state.video_bytes = None
+if 'video_filename' not in st.session_state:
+    st.session_state.video_filename = None
+if 'report_text' not in st.session_state:
+    st.session_state.report_text = None
+if 'report_filename' not in st.session_state:
+    st.session_state.report_filename = None
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
 uploaded_file = st.file_uploader(
@@ -566,22 +574,10 @@ if uploaded_file is not None:
 
                     if success and os.path.exists(final_video_path):
                         with open(final_video_path, 'rb') as vf:
-                            video_bytes = vf.read()
-                        st.success("✅ Video generato con successo!")
-                        st.video(video_bytes)
+                            st.session_state.video_bytes = vf.read()
                         video_filename = f"pattern_{pattern_type.replace(' ', '_')}.mp4"
-                        st.download_button(
-                            label="📥 Scarica Video MP4",
-                            data=video_bytes,
-                            file_name=video_filename,
-                            mime="video/mp4"
-                        )
-
-                        # ── Report stilizzato ──────────────────────────────
-                        st.markdown("---")
-                        st.subheader("📋 Report / Descrizione per Social & YouTube")
-
-                        report_text = generate_report_text(
+                        st.session_state.video_filename = video_filename
+                        st.session_state.report_text = generate_report_text(
                             audio_features=audio_features,
                             pattern_type=pattern_type,
                             aspect_ratio=aspect_ratio,
@@ -589,15 +585,8 @@ if uploaded_file is not None:
                             video_title=video_title,
                             filename=video_filename
                         )
-
-                        st.code(report_text, language=None)
-
-                        st.download_button(
-                            label="📄 Scarica Report .txt",
-                            data=report_text.encode("utf-8"),
-                            file_name=f"report_{pattern_type.replace(' ', '_')}.txt",
-                            mime="text/plain"
-                        )
+                        st.session_state.report_filename = f"report_{pattern_type.replace(' ', '_')}.txt"
+                        st.success("✅ Video generato con successo!")
                     else:
                         st.error("Il file video finale non è stato creato.")
 
@@ -615,3 +604,30 @@ if uploaded_file is not None:
                 except Exception as e:
                     st.error(f"Errore durante la generazione: {str(e)}")
                     st.info("Prova a ricaricare l'app e riprovare con un file diverso.")
+
+        # ── Risultati persistenti (sopravvivono al rerun dei download button) ──
+        if st.session_state.video_bytes is not None:
+            st.markdown("---")
+            st.video(st.session_state.video_bytes)
+
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                st.download_button(
+                    label="📥 Scarica Video MP4",
+                    data=st.session_state.video_bytes,
+                    file_name=st.session_state.video_filename,
+                    mime="video/mp4",
+                    key="dl_video"
+                )
+            with col_dl2:
+                st.download_button(
+                    label="📄 Scarica Report .txt",
+                    data=st.session_state.report_text.encode("utf-8"),
+                    file_name=st.session_state.report_filename,
+                    mime="text/plain",
+                    key="dl_report"
+                )
+
+            st.markdown("---")
+            st.subheader("📋 Report / Descrizione per Social & YouTube")
+            st.code(st.session_state.report_text, language=None)
