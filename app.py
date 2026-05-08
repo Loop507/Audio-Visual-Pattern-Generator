@@ -163,17 +163,17 @@ class PatternGenerator:
             color_variation = 0.8 + intensity * 0.4 * self.glitch_effect
             final_color = np.array([c * color_variation for c in base_color], dtype=np.float32)
 
-            # Disegna lo spessore con operazioni vettorizzate
+            # Disegna lo spessore — fancy indexing restituisce copia,
+            # quindi aggiorniamo direttamente con assegnazione
             for t in range(-line_thickness // 2, line_thickness // 2 + 1):
                 ys = np.clip(curve_y + t, 0, height - 1)
                 denom = max(line_thickness / 2 + 1, 1e-6)
-                alpha = (1.0 - abs(t) / denom) * intensity
-                for c in range(3):
-                    np.maximum(
-                        pattern[ys, x_coords, c],
-                        final_color[c] * alpha,
-                        out=pattern[ys, x_coords, c]
-                    )
+                alpha = float((1.0 - abs(t) / denom) * intensity)
+                pixel_colors = np.maximum(
+                    pattern[ys, x_coords, :],          # shape (width, 3)
+                    final_color * alpha                 # broadcast (3,)
+                )
+                pattern[ys, x_coords, :] = pixel_colors
 
         if audio_idx > 0:
             for c in range(3):
