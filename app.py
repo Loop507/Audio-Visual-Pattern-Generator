@@ -26,6 +26,7 @@ class PatternGenerator:
     def __init__(self, audio_features, user_params):
         self.audio_features = audio_features
         self.colors = user_params.get("colors") or self.generate_random_colors()
+        self.colors_arr = np.array(self.colors, dtype=np.float32)
         self.background_color = user_params.get("background_color", (0, 0, 0))
         self.master_intensity = user_params.get("master_intensity", 1.0)
         self.glitch_effect = user_params.get("glitch_effect", 0.5)
@@ -54,33 +55,43 @@ class PatternGenerator:
         num_blocks_y = int(10 + 15 * self.thickness)
         block_width = max(1, width // num_blocks_x)
         block_height = max(1, height // num_blocks_y)
+        n_colors = len(self.colors_arr)
 
-        for i in range(num_blocks_x):
-            for j in range(num_blocks_y):
-                freq_idx = (i + j) % len(freq_data)
-                intensity = float(freq_data[freq_idx])
+        # Griglia dei blocchi + intensità per-blocco, calcolate in blocco con NumPy
+        i_idx, j_idx = np.meshgrid(np.arange(num_blocks_x), np.arange(num_blocks_y), indexing='ij')
+        freq_idx = (i_idx + j_idx) % len(freq_data)
+        intensity = freq_data[freq_idx]
 
-                if intensity < 0.1 and random.random() > (1 - self.glitch_effect):
-                    continue
+        skip_roll = np.random.random((num_blocks_x, num_blocks_y))
+        skip_mask = (intensity < 0.1) & (skip_roll > (1 - self.glitch_effect))
 
-                actual_width = int(block_width * (0.5 + intensity * 0.5))
-                actual_height = int(block_height * (0.5 + intensity * 0.5))
+        actual_w = (block_width * (0.5 + intensity * 0.5)).astype(np.int32)
+        actual_h = (block_height * (0.5 + intensity * 0.5)).astype(np.int32)
 
-                x_offset = random.randint(-5, 5) if intensity > 0.7 * self.glitch_effect else 0
-                y_offset = random.randint(-3, 3) if intensity > 0.6 * self.glitch_effect else 0
+        x_off_raw = np.random.randint(-5, 6, size=(num_blocks_x, num_blocks_y))
+        y_off_raw = np.random.randint(-3, 4, size=(num_blocks_x, num_blocks_y))
+        x_offset = np.where(intensity > 0.7 * self.glitch_effect, x_off_raw, 0)
+        y_offset = np.where(intensity > 0.6 * self.glitch_effect, y_off_raw, 0)
 
-                x_start = max(0, i * block_width + x_offset)
-                y_start = max(0, j * block_height + y_offset)
-                x_end = min(width, x_start + actual_width)
-                y_end = min(height, y_start + actual_height)
+        x_start = np.clip(i_idx * block_width + x_offset, 0, width)
+        y_start = np.clip(j_idx * block_height + y_offset, 0, height)
+        x_end = np.clip(x_start + actual_w, 0, width)
+        y_end = np.clip(y_start + actual_h, 0, height)
 
-                color_idx = int((intensity + i / num_blocks_x + j / num_blocks_y) * len(self.colors)) % len(self.colors)
-                color = self.colors[color_idx]
-                brightness = 0.4 + intensity * 0.6 * self.master_intensity
-                final_color = [c * brightness for c in color]
+        color_idx = ((intensity + i_idx / num_blocks_x + j_idx / num_blocks_y) * n_colors).astype(np.int32) % n_colors
+        brightness = 0.4 + intensity * 0.6 * self.master_intensity
+        block_colors = self.colors_arr[color_idx] * brightness[..., None]
 
-                if x_start < x_end and y_start < y_end:
-                    pattern[y_start:y_end, x_start:x_end] = final_color
+        valid = (~skip_mask) & (x_start < x_end) & (y_start < y_end)
+        vi, vj = np.nonzero(valid)
+        xs, ys, xe, ye = x_start[vi, vj], y_start[vi, vj], x_end[vi, vj], y_end[vi, vj]
+        cols = block_colors[vi, vj]
+
+        # Loop residuo solo sui blocchi validi (dimensioni/posizioni variabili:
+        # non esiste un'operazione NumPy unica per "incollare" rettangoli di
+        # taglia diversa in punti diversi senza sovrascritture indesiderate)
+        for k in range(len(vi)):
+            pattern[ys[k]:ye[k], xs[k]:xe[k]] = cols[k]
 
         return pattern
 
@@ -485,6 +496,20 @@ if uploaded_file is not None:
         st.markdown("---")
         st.subheader("🖼️ Anteprima (frame centrale, bassa risoluzione)")
 
+        # Calcola le dimensioni finali in base all'aspect ratio scelto,
+        # così la preview riflette davvero la geometria del video finale
+        # (prima era fissa 320x180 = 16:9, sbagliata per 1:1 e 9:16)
+        if aspect_ratio == "1:1 (Square)":
+            final_width, final_height = 1080, 1080
+        elif aspect_ratio == "9:16 (Verticale)":
+            final_width, final_height = 720, 1280
+        else:
+            final_width, final_height = 1280, 720
+
+        preview_scale = 480 / max(final_width, final_height)
+        preview_width = max(1, int(final_width * preview_scale))
+        preview_height = max(1, int(final_height * preview_scale))
+
         user_params_preview = {
             "master_intensity": master_intensity,
             "glitch_effect": glitch_effect,
@@ -494,20 +519,17 @@ if uploaded_file is not None:
         }
 
         with st.spinner("Generando anteprima..."):
-            preview_img = generate_preview_frame(audio_features, pattern_type, user_params_preview)
-        st.image(preview_img, caption=f"Pattern: {pattern_type}", use_container_width=True)
+            preview_img = generate_preview_frame(audio_features, pattern_type, user_params_preview,
+                                                  width=preview_width, height=preview_height)
+        st.image(preview_img, caption=f"Pattern: {pattern_type} — anteprima {preview_width}x{preview_height} ({aspect_ratio})",
+                 use_container_width=True)
 
         # ─── Generazione video ────────────────────────────────────────────────
         st.markdown("---")
         if st.button("🎬 Genera Video MP4"):
             with st.spinner("Generando video... Questo può richiedere alcuni minuti."):
                 try:
-                    if aspect_ratio == "1:1 (Square)":
-                        width, height = 1080, 1080
-                    elif aspect_ratio == "9:16 (Verticale)":
-                        width, height = 720, 1280
-                    else:
-                        width, height = 1280, 720
+                    width, height = final_width, final_height
 
                     video_no_audio_path = os.path.join(
                         tempfile.gettempdir(), f"video_no_audio_{int(time.time())}.mp4"
