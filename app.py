@@ -1,8 +1,6 @@
 import streamlit as st
 import numpy as np
 import librosa
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 import random
 import time
 from scipy.ndimage import gaussian_filter1d
@@ -10,7 +8,6 @@ import colorsys
 import imageio
 import os
 import tempfile
-import soundfile
 import subprocess
 from PIL import Image, ImageDraw, ImageFont
 
@@ -182,6 +179,7 @@ class PatternGenerator:
         return pattern
 
 
+@st.cache_data(show_spinner=False)
 def extract_audio_features(audio_file):
     """Estrae le caratteristiche audio — robusto contro errori di shape e dtype"""
     try:
@@ -526,7 +524,7 @@ if uploaded_file is not None:
                         "background_color": bg_color_rgb
                     }
                     generator = PatternGenerator(audio_features, user_params)
-                    total_frames = int(audio_features['duration'] * 30)
+                    total_frames = max(1, int(audio_features['duration'] * 30))
                     audio_frame_step = len(audio_features['spectral_features']) / max(total_frames, 1)
 
                     writer = imageio.get_writer(video_no_audio_path, fps=30,
