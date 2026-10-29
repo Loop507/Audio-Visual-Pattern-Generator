@@ -1,11 +1,8 @@
-streamlit
+streamlit>=1.50
 numpy
-librosa
-matplotlib
 scipy
-imageio[ffmpeg]
-Pillow
-setuptools
+librosa>=0.10.2
 soundfile
-audioread
-numba
+imageio
+imageio-ffmpeg
+pillow
